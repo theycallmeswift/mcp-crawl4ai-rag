@@ -88,6 +88,7 @@ class AIScriptAnalyzer:
     def __init__(self):
         self.import_map: Dict[str, str] = {}  # alias -> actual_module_name
         self.variable_types: Dict[str, str] = {}  # variable_name -> class_type
+        self.context_manager_vars: Dict[str, Tuple[int, int, str]] = {}  # var_name -> (start_line, end_line, type)
         
     def analyze_script(self, script_path: str) -> AnalysisResult:
         """Analyze a Python script and extract all relevant information"""
@@ -101,6 +102,7 @@ class AIScriptAnalyzer:
             # Reset state for new analysis
             self.import_map.clear()
             self.variable_types.clear()
+            self.context_manager_vars.clear()
             
             # Track processed nodes to avoid duplicates
             self.processed_calls = set()
@@ -190,6 +192,12 @@ class AIScriptAnalyzer:
                         # Still process the method call
                         self._extract_method_call(node.value, result)
                         self.processed_calls.add(id(node.value))
+        
+        # AsyncWith statements (context managers)
+        elif isinstance(node, ast.AsyncWith):
+            self._handle_async_with(node, result)
+        elif isinstance(node, ast.With):
+            self._handle_with(node, result)
         
         # Method calls and function calls
         elif isinstance(node, ast.Call):
@@ -326,11 +334,29 @@ class AIScriptAnalyzer:
         """Update object types for method calls and attribute accesses"""
         for method_call in result.method_calls:
             if not method_call.object_type:
-                method_call.object_type = self.variable_types.get(method_call.object_name)
+                # First check context manager variables
+                obj_type = self._get_context_aware_type(method_call.object_name, method_call.line_number)
+                if obj_type:
+                    method_call.object_type = obj_type
+                else:
+                    method_call.object_type = self.variable_types.get(method_call.object_name)
         
         for attr_access in result.attribute_accesses:
             if not attr_access.object_type:
-                attr_access.object_type = self.variable_types.get(attr_access.object_name)
+                # First check context manager variables
+                obj_type = self._get_context_aware_type(attr_access.object_name, attr_access.line_number)
+                if obj_type:
+                    attr_access.object_type = obj_type
+                else:
+                    attr_access.object_type = self.variable_types.get(attr_access.object_name)
+    
+    def _get_context_aware_type(self, var_name: str, line_number: int) -> Optional[str]:
+        """Get the type of a variable considering its context (e.g., async with scope)"""
+        if var_name in self.context_manager_vars:
+            start_line, end_line, var_type = self.context_manager_vars[var_name]
+            if start_line <= line_number <= end_line:
+                return var_type
+        return None
     
     def _get_name_from_call(self, node: ast.AST) -> Optional[str]:
         """Get the name from a call node (for class instantiation)"""
@@ -419,6 +445,48 @@ class AIScriptAnalyzer:
             # For now, we'll use a generic type hint for method results
             # In a more sophisticated system, we could look up the return type
             self.variable_types[var_name] = "method_result"
+    
+    def _handle_async_with(self, node: ast.AsyncWith, result: AnalysisResult):
+        """Handle async with statements and track context manager variables"""
+        for item in node.items:
+            if item.optional_vars and isinstance(item.optional_vars, ast.Name):
+                var_name = item.optional_vars.id
+                
+                # If the context manager is a method call, track the result type
+                if isinstance(item.context_expr, ast.Call) and isinstance(item.context_expr.func, ast.Attribute):
+                    # Extract and process the method call
+                    self._extract_method_call(item.context_expr, result)
+                    self.processed_calls.add(id(item.context_expr))
+                    
+                    # Track context manager scope for pydantic_ai run_stream calls
+                    obj_name = self._get_name_from_node(item.context_expr.func.value)
+                    method_name = item.context_expr.func.attr
+                    
+                    if (obj_name and obj_name in self.variable_types and 
+                        'pydantic_ai' in str(self.variable_types[obj_name]) and 
+                        method_name == 'run_stream'):
+                        
+                        # Calculate the scope of this async with block
+                        start_line = getattr(node, 'lineno', 0)
+                        end_line = getattr(node, 'end_lineno', start_line + 50)  # fallback estimate
+                        
+                        # Track this variable as pydantic_ai_result within this scope
+                        self.context_manager_vars[var_name] = (start_line, end_line, "pydantic_ai_result")
+    
+    def _handle_with(self, node: ast.With, result: AnalysisResult):
+        """Handle regular with statements and track context manager variables"""
+        for item in node.items:
+            if item.optional_vars and isinstance(item.optional_vars, ast.Name):
+                var_name = item.optional_vars.id
+                
+                # If the context manager is a method call, track the result type
+                if isinstance(item.context_expr, ast.Call) and isinstance(item.context_expr.func, ast.Attribute):
+                    # Extract and process the method call
+                    self._extract_method_call(item.context_expr, result)
+                    self.processed_calls.add(id(item.context_expr))
+                    
+                    # Track basic type information
+                    self.variable_types[var_name] = "context_manager_result"
     
     def _resolve_full_name(self, name: str) -> Optional[str]:
         """Resolve a name to its full module.name using import map"""

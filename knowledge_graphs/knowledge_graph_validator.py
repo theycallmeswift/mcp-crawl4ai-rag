@@ -339,7 +339,11 @@ class KnowledgeGraphValidator:
             )
         
         # Find method in knowledge graph
-        method_info = await self._find_method(class_type, method_call.method_name)
+        if class_type == "pydantic_ai_result":
+            # Special handling for pydantic_ai result objects
+            method_info = await self._find_pydantic_ai_result_method(method_call.method_name)
+        else:
+            method_info = await self._find_method(class_type, method_call.method_name)
         
         if not method_info:
             # Check for similar method names
@@ -996,6 +1000,37 @@ class KnowledgeGraphValidator:
             
             return None
     
+    async def _find_pydantic_ai_result_method(self, method_name: str) -> Optional[Dict[str, Any]]:
+        """Find method information for pydantic_ai result objects"""
+        # Look for methods on pydantic_ai classes that could be result objects
+        async with self.driver.session() as session:
+            # Search for common result methods in pydantic_ai repository
+            query = """
+            MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)-[:DEFINES]->(c:Class)-[:HAS_METHOD]->(m:Method)
+            WHERE m.name = $method_name 
+              AND (c.name CONTAINS 'Result' OR c.name CONTAINS 'Stream' OR c.name CONTAINS 'Run')
+            RETURN m.name as name, m.params_list as params_list, m.params_detailed as params_detailed,
+                   m.return_type as return_type, m.args as args, c.name as class_name
+            LIMIT 1
+            """
+            
+            result = await session.run(query, repo_name="pydantic_ai", method_name=method_name)
+            record = await result.single()
+            
+            if record:
+                # Use detailed params if available, fall back to simple params
+                params_to_use = record['params_detailed'] or record['params_list'] or []
+                
+                return {
+                    'name': record['name'],
+                    'params_list': params_to_use,
+                    'return_type': record['return_type'],
+                    'args': record['args'] or [],
+                    'source_class': record['class_name']
+                }
+            
+            return None
+    
     async def _find_similar_modules(self, module_name: str) -> List[str]:
         """Find similar repository names for suggestions"""
         async with self.driver.session() as session:
@@ -1094,6 +1129,10 @@ class KnowledgeGraphValidator:
         """Check if a class type comes from a module in the knowledge graph"""
         if not class_type:
             return False
+        
+        # Special case: pydantic_ai result objects should be treated as knowledge graph items
+        if class_type == "pydantic_ai_result":
+            return True
         
         # For dotted names like "pydantic_ai.Agent", check the base module
         if '.' in class_type:
