@@ -132,7 +132,7 @@ async def main():
                     # Pass the Graphiti client as a dependency
                     deps = GraphitiDependencies(graphiti_client=graphiti_client)
                     
-                    async with graphiti_agent.run_stream(
+                    async with graphiti_agent.run_a_stream(
                         user_input, message_history=messages, deps=deps
                     ) as result:
                         curr_message = ""

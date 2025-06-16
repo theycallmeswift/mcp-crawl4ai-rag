@@ -3,6 +3,7 @@ MCP server for web crawling with Crawl4AI.
 
 This server provides tools to crawl websites using Crawl4AI, automatically detecting
 the appropriate crawl method based on URL type (sitemap, txt file, or regular webpage).
+Also includes AI hallucination detection and repository parsing tools using Neo4j knowledge graphs.
 """
 from mcp.server.fastmcp import FastMCP, Context
 from sentence_transformers import CrossEncoder
@@ -21,8 +22,13 @@ import json
 import os
 import re
 import concurrent.futures
+import sys
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
+
+# Add knowledge_graphs folder to path for importing knowledge graph modules
+knowledge_graphs_path = Path(__file__).resolve().parent.parent / 'knowledge_graphs'
+sys.path.append(str(knowledge_graphs_path))
 
 from utils import (
     get_supabase_client, 
@@ -36,12 +42,84 @@ from utils import (
     search_code_examples
 )
 
+# Import knowledge graph modules (with fallback if not available)
+try:
+    from knowledge_graph_validator import KnowledgeGraphValidator
+    from parse_repo_into_neo4j import DirectNeo4jExtractor
+    from ai_script_analyzer import AIScriptAnalyzer
+    from hallucination_reporter import HallucinationReporter
+    KNOWLEDGE_GRAPH_AVAILABLE = True
+except ImportError as e:
+    print(f"Knowledge graph modules not available: {e}")
+    KnowledgeGraphValidator = None
+    DirectNeo4jExtractor = None
+    AIScriptAnalyzer = None
+    HallucinationReporter = None
+    KNOWLEDGE_GRAPH_AVAILABLE = False
+
 # Load environment variables from the project root .env file
 project_root = Path(__file__).resolve().parent.parent
 dotenv_path = project_root / '.env'
 
 # Force override of existing environment variables
 load_dotenv(dotenv_path, override=True)
+
+# Helper functions for Neo4j validation and error handling
+def validate_neo4j_connection() -> bool:
+    """Check if Neo4j environment variables are configured."""
+    return all([
+        os.getenv("NEO4J_URI"),
+        os.getenv("NEO4J_USER"),
+        os.getenv("NEO4J_PASSWORD")
+    ])
+
+def format_neo4j_error(error: Exception) -> str:
+    """Format Neo4j connection errors for user-friendly messages."""
+    error_str = str(error).lower()
+    if "authentication" in error_str or "unauthorized" in error_str:
+        return "Neo4j authentication failed. Check NEO4J_USER and NEO4J_PASSWORD."
+    elif "connection" in error_str or "refused" in error_str or "timeout" in error_str:
+        return "Cannot connect to Neo4j. Check NEO4J_URI and ensure Neo4j is running."
+    elif "database" in error_str:
+        return "Neo4j database error. Check if the database exists and is accessible."
+    else:
+        return f"Neo4j error: {str(error)}"
+
+def validate_script_path(script_path: str) -> Dict[str, Any]:
+    """Validate script path and return error info if invalid."""
+    if not script_path or not isinstance(script_path, str):
+        return {"valid": False, "error": "Script path is required"}
+    
+    if not os.path.exists(script_path):
+        return {"valid": False, "error": f"Script not found: {script_path}"}
+    
+    if not script_path.endswith('.py'):
+        return {"valid": False, "error": "Only Python (.py) files are supported"}
+    
+    try:
+        # Check if file is readable
+        with open(script_path, 'r', encoding='utf-8') as f:
+            f.read(1)  # Read first character to test
+        return {"valid": True}
+    except Exception as e:
+        return {"valid": False, "error": f"Cannot read script file: {str(e)}"}
+
+def validate_github_url(repo_url: str) -> Dict[str, Any]:
+    """Validate GitHub repository URL."""
+    if not repo_url or not isinstance(repo_url, str):
+        return {"valid": False, "error": "Repository URL is required"}
+    
+    repo_url = repo_url.strip()
+    
+    # Basic GitHub URL validation
+    if not ("github.com" in repo_url.lower() or repo_url.endswith(".git")):
+        return {"valid": False, "error": "Please provide a valid GitHub repository URL"}
+    
+    # Check URL format
+    if not (repo_url.startswith("https://") or repo_url.startswith("git@")):
+        return {"valid": False, "error": "Repository URL must start with https:// or git@"}
+    
+    return {"valid": True, "repo_name": repo_url.split('/')[-1].replace('.git', '')}
 
 # Create a dataclass for our application context
 @dataclass
@@ -50,6 +128,8 @@ class Crawl4AIContext:
     crawler: AsyncWebCrawler
     supabase_client: Client
     reranking_model: Optional[CrossEncoder] = None
+    knowledge_validator: Optional[Any] = None  # KnowledgeGraphValidator when available
+    repo_extractor: Optional[Any] = None       # DirectNeo4jExtractor when available
 
 @asynccontextmanager
 async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
@@ -84,15 +164,61 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
             print(f"Failed to load reranking model: {e}")
             reranking_model = None
     
+    # Initialize Neo4j components if available and configured
+    knowledge_validator = None
+    repo_extractor = None
+    
+    if KNOWLEDGE_GRAPH_AVAILABLE:
+        neo4j_uri = os.getenv("NEO4J_URI")
+        neo4j_user = os.getenv("NEO4J_USER")
+        neo4j_password = os.getenv("NEO4J_PASSWORD")
+        
+        if neo4j_uri and neo4j_user and neo4j_password:
+            try:
+                print("Initializing knowledge graph components...")
+                
+                # Initialize knowledge graph validator
+                knowledge_validator = KnowledgeGraphValidator(neo4j_uri, neo4j_user, neo4j_password)
+                await knowledge_validator.initialize()
+                print("✓ Knowledge graph validator initialized")
+                
+                # Initialize repository extractor
+                repo_extractor = DirectNeo4jExtractor(neo4j_uri, neo4j_user, neo4j_password)
+                await repo_extractor.initialize()
+                print("✓ Repository extractor initialized")
+                
+            except Exception as e:
+                print(f"Failed to initialize Neo4j components: {format_neo4j_error(e)}")
+                knowledge_validator = None
+                repo_extractor = None
+        else:
+            print("Neo4j credentials not configured - knowledge graph tools will be unavailable")
+    else:
+        print("Knowledge graph modules not available - check dependencies")
+    
     try:
         yield Crawl4AIContext(
             crawler=crawler,
             supabase_client=supabase_client,
-            reranking_model=reranking_model
+            reranking_model=reranking_model,
+            knowledge_validator=knowledge_validator,
+            repo_extractor=repo_extractor
         )
     finally:
-        # Clean up the crawler
+        # Clean up all components
         await crawler.__aexit__(None, None, None)
+        if knowledge_validator:
+            try:
+                await knowledge_validator.close()
+                print("✓ Knowledge graph validator closed")
+            except Exception as e:
+                print(f"Error closing knowledge validator: {e}")
+        if repo_extractor:
+            try:
+                await repo_extractor.close()
+                print("✓ Repository extractor closed")
+            except Exception as e:
+                print(f"Error closing repository extractor: {e}")
 
 # Initialize FastMCP server
 mcp = FastMCP(
@@ -946,6 +1072,229 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
             "success": False,
             "query": query,
             "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def check_ai_script_hallucinations(ctx: Context, script_path: str) -> str:
+    """
+    Check an AI-generated Python script for hallucinations using the knowledge graph.
+    
+    This tool analyzes a Python script for potential AI hallucinations by validating
+    imports, method calls, class instantiations, and function calls against a Neo4j
+    knowledge graph containing real repository data.
+    
+    The tool performs comprehensive analysis including:
+    - Import validation against known repositories
+    - Method call validation on classes from the knowledge graph
+    - Class instantiation parameter validation
+    - Function call parameter validation
+    - Attribute access validation
+    
+    Args:
+        ctx: The MCP server provided context
+        script_path: Absolute path to the Python script to analyze
+    
+    Returns:
+        JSON string with hallucination detection results, confidence scores, and recommendations
+    """
+    try:
+        # Check if knowledge graph tools are available
+        if not KNOWLEDGE_GRAPH_AVAILABLE:
+            return json.dumps({
+                "success": False,
+                "error": "Knowledge graph tools not available. Install required dependencies."
+            }, indent=2)
+        
+        # Get the knowledge validator from context
+        knowledge_validator = ctx.request_context.lifespan_context.knowledge_validator
+        
+        if not knowledge_validator:
+            return json.dumps({
+                "success": False,
+                "error": "Knowledge graph validator not available. Check Neo4j configuration in environment variables."
+            }, indent=2)
+        
+        # Validate script path
+        validation = validate_script_path(script_path)
+        if not validation["valid"]:
+            return json.dumps({
+                "success": False,
+                "script_path": script_path,
+                "error": validation["error"]
+            }, indent=2)
+        
+        # Step 1: Analyze script structure using AST
+        analyzer = AIScriptAnalyzer()
+        analysis_result = analyzer.analyze_script(script_path)
+        
+        if analysis_result.errors:
+            print(f"Analysis warnings for {script_path}: {analysis_result.errors}")
+        
+        # Step 2: Validate against knowledge graph
+        validation_result = await knowledge_validator.validate_script(analysis_result)
+        
+        # Step 3: Generate comprehensive report
+        reporter = HallucinationReporter()
+        report = reporter.generate_comprehensive_report(validation_result)
+        
+        # Format response with comprehensive information
+        return json.dumps({
+            "success": True,
+            "script_path": script_path,
+            "overall_confidence": validation_result.overall_confidence,
+            "validation_summary": {
+                "total_validations": report["validation_summary"]["total_validations"],
+                "valid_count": report["validation_summary"]["valid_count"],
+                "invalid_count": report["validation_summary"]["invalid_count"],
+                "uncertain_count": report["validation_summary"]["uncertain_count"],
+                "not_found_count": report["validation_summary"]["not_found_count"],
+                "hallucination_rate": report["validation_summary"]["hallucination_rate"]
+            },
+            "hallucinations_detected": report["hallucinations_detected"],
+            "recommendations": report["recommendations"],
+            "analysis_metadata": {
+                "total_imports": report["analysis_metadata"]["total_imports"],
+                "total_classes": report["analysis_metadata"]["total_classes"],
+                "total_methods": report["analysis_metadata"]["total_methods"],
+                "total_attributes": report["analysis_metadata"]["total_attributes"],
+                "total_functions": report["analysis_metadata"]["total_functions"]
+            },
+            "libraries_analyzed": report.get("libraries_analyzed", [])
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "script_path": script_path,
+            "error": f"Analysis failed: {str(e)}"
+        }, indent=2)
+
+@mcp.tool()
+async def parse_github_repository(ctx: Context, repo_url: str) -> str:
+    """
+    Parse a GitHub repository into the Neo4j knowledge graph.
+    
+    This tool clones a GitHub repository, analyzes its Python files, and stores
+    the code structure (classes, methods, functions, imports) in Neo4j for use
+    in hallucination detection. The tool:
+    
+    - Clones the repository to a temporary location
+    - Analyzes Python files to extract code structure
+    - Stores classes, methods, functions, and imports in Neo4j
+    - Provides detailed statistics about the parsing results
+    - Automatically handles module name detection for imports
+    
+    Args:
+        ctx: The MCP server provided context
+        repo_url: GitHub repository URL (e.g., 'https://github.com/user/repo.git')
+    
+    Returns:
+        JSON string with parsing results, statistics, and repository information
+    """
+    try:
+        # Check if knowledge graph tools are available
+        if not KNOWLEDGE_GRAPH_AVAILABLE:
+            return json.dumps({
+                "success": False,
+                "error": "Knowledge graph tools not available. Install required dependencies."
+            }, indent=2)
+        
+        # Get the repository extractor from context
+        repo_extractor = ctx.request_context.lifespan_context.repo_extractor
+        
+        if not repo_extractor:
+            return json.dumps({
+                "success": False,
+                "error": "Repository extractor not available. Check Neo4j configuration in environment variables."
+            }, indent=2)
+        
+        # Validate repository URL
+        validation = validate_github_url(repo_url)
+        if not validation["valid"]:
+            return json.dumps({
+                "success": False,
+                "repo_url": repo_url,
+                "error": validation["error"]
+            }, indent=2)
+        
+        repo_name = validation["repo_name"]
+        
+        # Parse the repository (this includes cloning, analysis, and Neo4j storage)
+        print(f"Starting repository analysis for: {repo_name}")
+        await repo_extractor.analyze_repository(repo_url)
+        print(f"Repository analysis completed for: {repo_name}")
+        
+        # Query Neo4j for statistics about the parsed repository
+        async with repo_extractor.driver.session() as session:
+            # Get comprehensive repository statistics
+            stats_query = """
+            MATCH (r:Repository {name: $repo_name})
+            OPTIONAL MATCH (r)-[:CONTAINS]->(f:File)
+            OPTIONAL MATCH (f)-[:DEFINES]->(c:Class)
+            OPTIONAL MATCH (c)-[:HAS_METHOD]->(m:Method)
+            OPTIONAL MATCH (f)-[:DEFINES]->(func:Function)
+            OPTIONAL MATCH (c)-[:HAS_ATTRIBUTE]->(a:Attribute)
+            WITH r, 
+                 count(DISTINCT f) as files_count,
+                 count(DISTINCT c) as classes_count,
+                 count(DISTINCT m) as methods_count,
+                 count(DISTINCT func) as functions_count,
+                 count(DISTINCT a) as attributes_count
+            
+            // Get some sample module names
+            OPTIONAL MATCH (r)-[:CONTAINS]->(sample_f:File)
+            WITH r, files_count, classes_count, methods_count, functions_count, attributes_count,
+                 collect(DISTINCT sample_f.module_name)[0..5] as sample_modules
+            
+            RETURN 
+                r.name as repo_name,
+                files_count,
+                classes_count, 
+                methods_count,
+                functions_count,
+                attributes_count,
+                sample_modules
+            """
+            
+            result = await session.run(stats_query, repo_name=repo_name)
+            record = await result.single()
+            
+            if record:
+                stats = {
+                    "repository": record['repo_name'],
+                    "files_processed": record['files_count'],
+                    "classes_created": record['classes_count'],
+                    "methods_created": record['methods_count'], 
+                    "functions_created": record['functions_count'],
+                    "attributes_created": record['attributes_count'],
+                    "sample_modules": record['sample_modules'] or []
+                }
+            else:
+                return json.dumps({
+                    "success": False,
+                    "repo_url": repo_url,
+                    "error": f"Repository '{repo_name}' not found in database after parsing"
+                }, indent=2)
+        
+        return json.dumps({
+            "success": True,
+            "repo_url": repo_url,
+            "repo_name": repo_name,
+            "message": f"Successfully parsed repository '{repo_name}' into knowledge graph",
+            "statistics": stats,
+            "ready_for_validation": True,
+            "next_steps": [
+                "Repository is now available for hallucination detection",
+                f"Use check_ai_script_hallucinations to validate scripts against {repo_name}",
+                "The knowledge graph contains classes, methods, and functions from this repository"
+            ]
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "repo_url": repo_url,
+            "error": f"Repository parsing failed: {str(e)}"
         }, indent=2)
 
 async def crawl_markdown_file(crawler: AsyncWebCrawler, url: str) -> List[Dict[str, Any]]:
