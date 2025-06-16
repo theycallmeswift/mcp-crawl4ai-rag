@@ -644,7 +644,23 @@ class KnowledgeGraphValidator:
     async def _find_modules(self, module_name: str) -> List[str]:
         """Find repository matching the module name, then return its files"""
         async with self.driver.session() as session:
-            # First, find repository that matches the module name (exact match only)
+            # First, try to find files with module names that match or start with the search term
+            module_query = """
+            MATCH (r:Repository)-[:CONTAINS]->(f:File)
+            WHERE f.module_name = $module_name 
+               OR f.module_name STARTS WITH $module_name + '.'
+               OR split(f.module_name, '.')[0] = $module_name
+            RETURN DISTINCT r.name as repo_name, count(f) as file_count
+            ORDER BY file_count DESC
+            LIMIT 5
+            """
+            
+            result = await session.run(module_query, module_name=module_name)
+            repos_from_modules = []
+            async for record in result:
+                repos_from_modules.append(record['repo_name'])
+            
+            # Also try repository name matching as fallback
             repo_query = """
             MATCH (r:Repository)
             WHERE toLower(r.name) = toLower($module_name)
@@ -661,15 +677,18 @@ class KnowledgeGraphValidator:
             """
             
             result = await session.run(repo_query, module_name=module_name)
-            repos = []
+            repos_from_names = []
             async for record in result:
-                repos.append(record['repo_name'])
+                repos_from_names.append(record['repo_name'])
             
-            if not repos:
+            # Combine results, prioritizing module-based matches
+            all_repos = repos_from_modules + [r for r in repos_from_names if r not in repos_from_modules]
+            
+            if not all_repos:
                 return []
             
             # Get files from the best matching repository
-            best_repo = repos[0]
+            best_repo = all_repos[0]
             files_query = """
             MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)
             RETURN f.path, f.module_name
@@ -686,29 +705,46 @@ class KnowledgeGraphValidator:
     async def _get_module_contents(self, module_name: str) -> Tuple[List[str], List[str]]:
         """Get classes and functions available in a repository matching the module name"""
         async with self.driver.session() as session:
-            # First find the repository (exact match only)
-            repo_query = """
-            MATCH (r:Repository)
-            WHERE toLower(r.name) = toLower($module_name)
-               OR toLower(replace(r.name, '-', '_')) = toLower($module_name)
-               OR toLower(replace(r.name, '_', '-')) = toLower($module_name)
-            RETURN r.name as repo_name
-            ORDER BY 
-                CASE 
-                    WHEN toLower(r.name) = toLower($module_name) THEN 1
-                    WHEN toLower(replace(r.name, '-', '_')) = toLower($module_name) THEN 2
-                    WHEN toLower(replace(r.name, '_', '-')) = toLower($module_name) THEN 3
-                END
+            # First, try to find repository by module names in files
+            module_query = """
+            MATCH (r:Repository)-[:CONTAINS]->(f:File)
+            WHERE f.module_name = $module_name 
+               OR f.module_name STARTS WITH $module_name + '.'
+               OR split(f.module_name, '.')[0] = $module_name
+            RETURN DISTINCT r.name as repo_name, count(f) as file_count
+            ORDER BY file_count DESC
             LIMIT 1
             """
             
-            result = await session.run(repo_query, module_name=module_name)
+            result = await session.run(module_query, module_name=module_name)
             record = await result.single()
             
-            if not record:
-                return [], []
-            
-            repo_name = record['repo_name']
+            if record:
+                repo_name = record['repo_name']
+            else:
+                # Fallback to repository name matching
+                repo_query = """
+                MATCH (r:Repository)
+                WHERE toLower(r.name) = toLower($module_name)
+                   OR toLower(replace(r.name, '-', '_')) = toLower($module_name)
+                   OR toLower(replace(r.name, '_', '-')) = toLower($module_name)
+                RETURN r.name as repo_name
+                ORDER BY 
+                    CASE 
+                        WHEN toLower(r.name) = toLower($module_name) THEN 1
+                        WHEN toLower(replace(r.name, '-', '_')) = toLower($module_name) THEN 2
+                        WHEN toLower(replace(r.name, '_', '-')) = toLower($module_name) THEN 3
+                    END
+                LIMIT 1
+                """
+                
+                result = await session.run(repo_query, module_name=module_name)
+                record = await result.single()
+                
+                if not record:
+                    return [], []
+                
+                repo_name = record['repo_name']
             
             # Get classes from this repository
             class_query = """
@@ -740,27 +776,46 @@ class KnowledgeGraphValidator:
             return self.repo_cache[module_name]
         
         async with self.driver.session() as session:
-            query = """
-            MATCH (r:Repository)
-            WHERE toLower(r.name) = toLower($module_name)
-               OR toLower(replace(r.name, '-', '_')) = toLower($module_name)
-               OR toLower(replace(r.name, '_', '-')) = toLower($module_name)
-               OR toLower(r.name) CONTAINS toLower($module_name)
-               OR toLower($module_name) CONTAINS toLower(replace(r.name, '-', '_'))
-            RETURN r.name as repo_name
-            ORDER BY 
-                CASE 
-                    WHEN toLower(r.name) = toLower($module_name) THEN 1
-                    WHEN toLower(replace(r.name, '-', '_')) = toLower($module_name) THEN 2
-                    ELSE 3
-                END
+            # First, try to find repository by module names in files
+            module_query = """
+            MATCH (r:Repository)-[:CONTAINS]->(f:File)
+            WHERE f.module_name = $module_name 
+               OR f.module_name STARTS WITH $module_name + '.'
+               OR split(f.module_name, '.')[0] = $module_name
+            RETURN DISTINCT r.name as repo_name, count(f) as file_count
+            ORDER BY file_count DESC
             LIMIT 1
             """
             
-            result = await session.run(query, module_name=module_name)
+            result = await session.run(module_query, module_name=module_name)
             record = await result.single()
             
-            repo_name = record['repo_name'] if record else None
+            if record:
+                repo_name = record['repo_name']
+            else:
+                # Fallback to repository name matching
+                query = """
+                MATCH (r:Repository)
+                WHERE toLower(r.name) = toLower($module_name)
+                   OR toLower(replace(r.name, '-', '_')) = toLower($module_name)
+                   OR toLower(replace(r.name, '_', '-')) = toLower($module_name)
+                   OR toLower(r.name) CONTAINS toLower($module_name)
+                   OR toLower($module_name) CONTAINS toLower(replace(r.name, '-', '_'))
+                RETURN r.name as repo_name
+                ORDER BY 
+                    CASE 
+                        WHEN toLower(r.name) = toLower($module_name) THEN 1
+                        WHEN toLower(replace(r.name, '-', '_')) = toLower($module_name) THEN 2
+                        ELSE 3
+                    END
+                LIMIT 1
+                """
+                
+                result = await session.run(query, module_name=module_name)
+                record = await result.single()
+                
+                repo_name = record['repo_name'] if record else None
+            
             self.repo_cache[module_name] = repo_name
             return repo_name
     

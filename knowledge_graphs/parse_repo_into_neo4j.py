@@ -70,7 +70,7 @@ class Neo4jCodeAnalyzer:
             
             tree = ast.parse(content)
             relative_path = str(file_path.relative_to(repo_root))
-            module_name = relative_path.replace('/', '.').replace('.py', '')
+            module_name = self._get_importable_module_name(file_path, repo_root, relative_path)
             
             # Extract structure
             classes = []
@@ -210,6 +210,49 @@ class Neo4jCodeAnalyzer:
             return True
         
         return False
+    
+    def _get_importable_module_name(self, file_path: Path, repo_root: Path, relative_path: str) -> str:
+        """Determine the actual importable module name for a Python file"""
+        # Start with the default: convert file path to module path
+        default_module = relative_path.replace('/', '.').replace('\\', '.').replace('.py', '')
+        
+        # Common patterns to detect the actual package root
+        path_parts = Path(relative_path).parts
+        
+        # Look for common package indicators
+        package_roots = []
+        
+        # Check each directory level for __init__.py to find package boundaries
+        current_path = repo_root
+        for i, part in enumerate(path_parts[:-1]):  # Exclude the .py file itself
+            current_path = current_path / part
+            if (current_path / '__init__.py').exists():
+                # This is a package directory, mark it as a potential root
+                package_roots.append(i)
+        
+        if package_roots:
+            # Use the first (outermost) package as the root
+            package_start = package_roots[0]
+            module_parts = path_parts[package_start:]
+            module_name = '.'.join(module_parts).replace('.py', '')
+            return module_name
+        
+        # Fallback: look for common Python project structures
+        # Skip common non-package directories
+        skip_dirs = {'src', 'lib', 'source', 'python', 'pkg', 'packages'}
+        
+        # Find the first directory that's not in skip_dirs
+        filtered_parts = []
+        for part in path_parts:
+            if part.lower() not in skip_dirs or filtered_parts:  # Once we start including, include everything
+                filtered_parts.append(part)
+        
+        if filtered_parts:
+            module_name = '.'.join(filtered_parts).replace('.py', '')
+            return module_name
+        
+        # Final fallback: use the default
+        return default_module
     
     def _extract_function_parameters(self, func_node):
         """Comprehensive parameter extraction from function definition"""
@@ -391,6 +434,49 @@ class DirectNeo4jExtractor:
         
         logger.info("Neo4j initialized successfully")
     
+    async def clear_repository_data(self, repo_name: str):
+        """Clear all data for a specific repository"""
+        logger.info(f"Clearing existing data for repository: {repo_name}")
+        async with self.driver.session() as session:
+            # Delete in specific order to avoid constraint issues
+            
+            # 1. Delete methods and attributes (they depend on classes)
+            await session.run("""
+                MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)-[:DEFINES]->(c:Class)-[:HAS_METHOD]->(m:Method)
+                DETACH DELETE m
+            """, repo_name=repo_name)
+            
+            await session.run("""
+                MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)-[:DEFINES]->(c:Class)-[:HAS_ATTRIBUTE]->(a:Attribute)
+                DETACH DELETE a
+            """, repo_name=repo_name)
+            
+            # 2. Delete functions (they depend on files)
+            await session.run("""
+                MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)-[:DEFINES]->(func:Function)
+                DETACH DELETE func
+            """, repo_name=repo_name)
+            
+            # 3. Delete classes (they depend on files)
+            await session.run("""
+                MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)-[:DEFINES]->(c:Class)
+                DETACH DELETE c
+            """, repo_name=repo_name)
+            
+            # 4. Delete files (they depend on repository)
+            await session.run("""
+                MATCH (r:Repository {name: $repo_name})-[:CONTAINS]->(f:File)
+                DETACH DELETE f
+            """, repo_name=repo_name)
+            
+            # 5. Finally delete the repository
+            await session.run("""
+                MATCH (r:Repository {name: $repo_name})
+                DETACH DELETE r
+            """, repo_name=repo_name)
+            
+        logger.info(f"Cleared data for repository: {repo_name}")
+    
     async def close(self):
         """Close Neo4j connection"""
         if self.driver:
@@ -444,6 +530,9 @@ class DirectNeo4jExtractor:
         """Analyze repository and create nodes/relationships in Neo4j"""
         repo_name = repo_url.split('/')[-1].replace('.git', '')
         logger.info(f"Analyzing repository: {repo_name}")
+        
+        # Clear existing data for this repository before re-processing
+        await self.clear_repository_data(repo_name)
         
         # Set default temp_dir to repos folder at script level
         if temp_dir is None:
