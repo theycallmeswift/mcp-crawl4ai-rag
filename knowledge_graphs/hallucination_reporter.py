@@ -76,47 +76,60 @@ class HallucinationReporter:
             }
             self._categorize_item(item, val.validation.status, valid_items, invalid_items, uncertain_items, not_found_items)
         
+        # Track reported items to avoid duplicates
+        reported_items = set()
+        
         # Process methods (only knowledge graph ones)
         for val in validation_result.method_validations:
             if not (val.method_call.object_type and self._is_from_knowledge_graph(val.method_call.object_type, validation_result)):
                 continue  # Skip external methods
-            item = {
-                'type': 'METHOD_CALL',
-                'name': val.method_call.method_name,
-                'object': val.method_call.object_name,
-                'object_type': val.method_call.object_type,
-                'line': val.method_call.line_number,
-                'status': val.validation.status.value,
-                'confidence': val.validation.confidence,
-                'message': val.validation.message,
-                'details': {
-                    'args_provided': val.method_call.args,
-                    'kwargs_provided': list(val.method_call.kwargs.keys()),
-                    'expected_params': val.expected_params,
-                    'parameter_validation': self._serialize_validation_result(val.parameter_validation) if val.parameter_validation else None,
-                    'suggestions': val.validation.suggestions
+            
+            # Create unique key to avoid duplicates
+            key = (val.method_call.line_number, val.method_call.method_name, val.method_call.object_type)
+            if key not in reported_items:
+                reported_items.add(key)
+                item = {
+                    'type': 'METHOD_CALL',
+                    'name': val.method_call.method_name,
+                    'object': val.method_call.object_name,
+                    'object_type': val.method_call.object_type,
+                    'line': val.method_call.line_number,
+                    'status': val.validation.status.value,
+                    'confidence': val.validation.confidence,
+                    'message': val.validation.message,
+                    'details': {
+                        'args_provided': val.method_call.args,
+                        'kwargs_provided': list(val.method_call.kwargs.keys()),
+                        'expected_params': val.expected_params,
+                        'parameter_validation': self._serialize_validation_result(val.parameter_validation) if val.parameter_validation else None,
+                        'suggestions': val.validation.suggestions
+                    }
                 }
-            }
-            self._categorize_item(item, val.validation.status, valid_items, invalid_items, uncertain_items, not_found_items)
+                self._categorize_item(item, val.validation.status, valid_items, invalid_items, uncertain_items, not_found_items)
         
-        # Process attributes (only knowledge graph ones)
+        # Process attributes (only knowledge graph ones) - but skip if already reported as method
         for val in validation_result.attribute_validations:
             if not (val.attribute_access.object_type and self._is_from_knowledge_graph(val.attribute_access.object_type, validation_result)):
                 continue  # Skip external attributes
-            item = {
-                'type': 'ATTRIBUTE_ACCESS',
-                'name': val.attribute_access.attribute_name,
-                'object': val.attribute_access.object_name,
-                'object_type': val.attribute_access.object_type,
-                'line': val.attribute_access.line_number,
-                'status': val.validation.status.value,
-                'confidence': val.validation.confidence,
-                'message': val.validation.message,
-                'details': {
-                    'expected_type': val.expected_type
+            
+            # Create unique key - if this was already reported as a method, skip it
+            key = (val.attribute_access.line_number, val.attribute_access.attribute_name, val.attribute_access.object_type)
+            if key not in reported_items:
+                reported_items.add(key)
+                item = {
+                    'type': 'ATTRIBUTE_ACCESS',
+                    'name': val.attribute_access.attribute_name,
+                    'object': val.attribute_access.object_name,
+                    'object_type': val.attribute_access.object_type,
+                    'line': val.attribute_access.line_number,
+                    'status': val.validation.status.value,
+                    'confidence': val.validation.confidence,
+                    'message': val.validation.message,
+                    'details': {
+                        'expected_type': val.expected_type
+                    }
                 }
-            }
-            self._categorize_item(item, val.validation.status, valid_items, invalid_items, uncertain_items, not_found_items)
+                self._categorize_item(item, val.validation.status, valid_items, invalid_items, uncertain_items, not_found_items)
         
         # Process functions (only knowledge graph ones)
         for val in validation_result.function_validations:

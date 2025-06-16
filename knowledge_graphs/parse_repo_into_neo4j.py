@@ -99,7 +99,7 @@ class Neo4jCodeAnalyzer:
                                     if p['optional'] and p['default'] is not None:
                                         param_str += f"={p['default']}"
                                     elif p['optional']:
-                                        param_str += "=..."
+                                        param_str += "=None"
                                     if p['kind'] != 'positional':
                                         param_str = f"[{p['kind']}] {param_str}"
                                     params_detailed.append(param_str)
@@ -143,7 +143,7 @@ class Neo4jCodeAnalyzer:
                                 if p['optional'] and p['default'] is not None:
                                     param_str += f"={p['default']}"
                                 elif p['optional']:
-                                    param_str += "=..."
+                                    param_str += "=None"
                                 if p['kind'] != 'positional':
                                     param_str = f"[{p['kind']}] {param_str}"
                                 params_detailed.append(param_str)
@@ -318,8 +318,19 @@ class Neo4jCodeAnalyzer:
                     elif isinstance(node.slice, ast.Tuple):
                         elts = [self._get_name(elt) for elt in node.slice.elts]
                         return f"{base}[{', '.join(elts)}]"
+                    elif isinstance(node.slice, ast.Constant):
+                        return f"{base}[{repr(node.slice.value)}]"
+                    elif isinstance(node.slice, ast.Attribute):
+                        return f"{base}[{self._get_name(node.slice)}]"
+                    elif isinstance(node.slice, ast.Subscript):
+                        return f"{base}[{self._get_name(node.slice)}]"
                     else:
-                        return f"{base}[...]"
+                        # Try to get the name of the slice, fallback to Any if it fails
+                        try:
+                            slice_name = self._get_name(node.slice)
+                            return f"{base}[{slice_name}]"
+                        except:
+                            return f"{base}[Any]"
                 return base
             elif isinstance(node, ast.Constant):
                 return str(node.value)
@@ -358,9 +369,9 @@ class DirectNeo4jExtractor:
         )
         
         # Clear existing data
-        logger.info("Clearing existing data...")
-        async with self.driver.session() as session:
-            await session.run("MATCH (n) DETACH DELETE n")
+        # logger.info("Clearing existing data...")
+        # async with self.driver.session() as session:
+        #     await session.run("MATCH (n) DETACH DELETE n")
         
         # Create constraints and indexes
         logger.info("Creating constraints and indexes...")
@@ -725,7 +736,8 @@ async def main():
         await extractor.initialize()
         
         # Analyze repository - direct Neo4j, no LLM processing!
-        repo_url = "https://github.com/pydantic/pydantic-ai.git"
+        # repo_url = "https://github.com/pydantic/pydantic-ai.git"
+        repo_url = "https://github.com/getzep/graphiti.git"
         await extractor.analyze_repository(repo_url)
         
         # Direct graph queries

@@ -446,7 +446,7 @@ class KnowledgeGraphValidator:
             validation = ValidationResult(
                 status=ValidationStatus.NOT_FOUND,
                 confidence=0.2,
-                message=f"Attribute/method '{attr_access.attribute_name}' not found on class '{class_type}'"
+                message=f"'{attr_access.attribute_name}' not found on class '{class_type}'"
             )
             return AttributeValidation(
                 attribute_access=attr_access,
@@ -1139,29 +1139,40 @@ class KnowledgeGraphValidator:
     def _detect_hallucinations(self, result: ScriptValidationResult) -> List[Dict[str, Any]]:
         """Detect and categorize hallucinations"""
         hallucinations = []
+        reported_items = set()  # Track reported items to avoid duplicates
         
         # Check method calls (only for knowledge graph classes)
         for val in result.method_validations:
             if (val.validation.status == ValidationStatus.NOT_FOUND and 
                 val.method_call.object_type and 
                 self._is_from_knowledge_graph(val.method_call.object_type)):
-                hallucinations.append({
-                    'type': 'METHOD_NOT_FOUND',
-                    'location': f"line {val.method_call.line_number}",
-                    'description': f"Method '{val.method_call.method_name}' not found on class '{val.method_call.object_type}'",
-                    'suggestion': val.validation.suggestions[0] if val.validation.suggestions else None
-                })
+                
+                # Create unique key to avoid duplicates
+                key = (val.method_call.line_number, val.method_call.method_name, val.method_call.object_type)
+                if key not in reported_items:
+                    reported_items.add(key)
+                    hallucinations.append({
+                        'type': 'METHOD_NOT_FOUND',
+                        'location': f"line {val.method_call.line_number}",
+                        'description': f"Method '{val.method_call.method_name}' not found on class '{val.method_call.object_type}'",
+                        'suggestion': val.validation.suggestions[0] if val.validation.suggestions else None
+                    })
         
-        # Check attributes (only for knowledge graph classes)
+        # Check attributes (only for knowledge graph classes) - but skip if already reported as method
         for val in result.attribute_validations:
             if (val.validation.status == ValidationStatus.NOT_FOUND and 
                 val.attribute_access.object_type and 
                 self._is_from_knowledge_graph(val.attribute_access.object_type)):
-                hallucinations.append({
-                    'type': 'ATTRIBUTE_NOT_FOUND',
-                    'location': f"line {val.attribute_access.line_number}",
-                    'description': f"Attribute '{val.attribute_access.attribute_name}' not found on class '{val.attribute_access.object_type}'"
-                })
+                
+                # Create unique key - if this was already reported as a method, skip it
+                key = (val.attribute_access.line_number, val.attribute_access.attribute_name, val.attribute_access.object_type)
+                if key not in reported_items:
+                    reported_items.add(key)
+                    hallucinations.append({
+                        'type': 'ATTRIBUTE_NOT_FOUND',
+                        'location': f"line {val.attribute_access.line_number}",
+                        'description': f"Attribute '{val.attribute_access.attribute_name}' not found on class '{val.attribute_access.object_type}'"
+                    })
         
         # Check parameter issues (only for knowledge graph methods)
         for val in result.method_validations:
