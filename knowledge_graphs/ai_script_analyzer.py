@@ -173,13 +173,23 @@ class AIScriptAnalyzer:
         """Analyze individual AST nodes for usage patterns"""
         line_num = getattr(node, 'lineno', 0)
         
-        # Class instantiations (assignments with Call on right side)
+        # Assignments (class instantiations and method call results)
         if isinstance(node, ast.Assign):
             if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
                 if isinstance(node.value, ast.Call):
-                    self._extract_class_instantiation(node, result)
-                    # Mark this call as processed to avoid duplicate processing
-                    self.processed_calls.add(id(node.value))
+                    # Check if it's a class instantiation or method call
+                    if isinstance(node.value.func, ast.Name):
+                        # Direct function/class call
+                        self._extract_class_instantiation(node, result)
+                        # Mark this call as processed to avoid duplicate processing
+                        self.processed_calls.add(id(node.value))
+                    elif isinstance(node.value.func, ast.Attribute):
+                        # Method call - track the variable assignment for type inference
+                        var_name = node.targets[0].id
+                        self._track_method_result_assignment(node.value, var_name)
+                        # Still process the method call
+                        self._extract_method_call(node.value, result)
+                        self.processed_calls.add(id(node.value))
         
         # Method calls and function calls
         elif isinstance(node, ast.Call):
@@ -192,7 +202,15 @@ class AIScriptAnalyzer:
                 # Mark this attribute as used in method call to avoid duplicate processing
                 self.method_call_attributes.add(id(node.func))
             elif isinstance(node.func, ast.Name):
-                self._extract_function_call(node, result)
+                # Check if this is likely a class instantiation (based on imported classes)
+                func_name = node.func.id
+                full_name = self._resolve_full_name(func_name)
+                
+                # If this is a known imported class, treat as class instantiation
+                if self._is_likely_class_instantiation(func_name, full_name):
+                    self._extract_nested_class_instantiation(node, result)
+                else:
+                    self._extract_function_call(node, result)
         
         # Attribute access (not in call context)
         elif isinstance(node, ast.Attribute):
@@ -347,6 +365,60 @@ class AIScriptAnalyzer:
             return f"{func_name}(...)" if func_name else "call(...)"
         else:
             return f"<{type(node).__name__}>"
+    
+    def _is_likely_class_instantiation(self, func_name: str, full_name: Optional[str]) -> bool:
+        """Determine if a function call is likely a class instantiation"""
+        # Check if it's a known imported class (classes typically start with uppercase)
+        if func_name and func_name[0].isupper():
+            return True
+        
+        # Check if the full name suggests a class (contains known class patterns)
+        if full_name:
+            # Common class patterns in module names
+            class_patterns = [
+                'Model', 'Provider', 'Client', 'Agent', 'Manager', 'Handler',
+                'Builder', 'Factory', 'Service', 'Controller', 'Processor'
+            ]
+            return any(pattern in full_name for pattern in class_patterns)
+        
+        return False
+    
+    def _extract_nested_class_instantiation(self, node: ast.Call, result: AnalysisResult):
+        """Extract class instantiation that's not in direct assignment (e.g., as parameter)"""
+        line_num = getattr(node, 'lineno', 0)
+        
+        if isinstance(node.func, ast.Name):
+            class_name = node.func.id
+            
+            args = [self._get_arg_representation(arg) for arg in node.args]
+            kwargs = {
+                kw.arg: self._get_arg_representation(kw.value) 
+                for kw in node.keywords if kw.arg
+            }
+            
+            # Resolve full class name using import map
+            full_class_name = self._resolve_full_name(class_name)
+            
+            # Use a synthetic variable name since this isn't assigned to a variable
+            var_name = f"<{class_name.lower()}_instance>"
+            
+            instantiation = ClassInstantiation(
+                variable_name=var_name,
+                class_name=class_name,
+                args=args,
+                kwargs=kwargs,
+                line_number=line_num,
+                full_class_name=full_class_name
+            )
+            
+            result.class_instantiations.append(instantiation)
+    
+    def _track_method_result_assignment(self, call_node: ast.Call, var_name: str):
+        """Track when a variable is assigned the result of a method call"""
+        if isinstance(call_node.func, ast.Attribute):
+            # For now, we'll use a generic type hint for method results
+            # In a more sophisticated system, we could look up the return type
+            self.variable_types[var_name] = "method_result"
     
     def _resolve_full_name(self, name: str) -> Optional[str]:
         """Resolve a name to its full module.name using import map"""
