@@ -84,7 +84,7 @@ class Neo4jCodeAnalyzer:
                     attributes = []
                     
                     for item in node.body:
-                        if isinstance(item, ast.FunctionDef):
+                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             if not item.name.startswith('_'):  # Public methods only
                                 # Extract comprehensive parameter info
                                 params = self._extract_function_parameters(item)
@@ -126,7 +126,7 @@ class Neo4jCodeAnalyzer:
                         'attributes': attributes
                     })
                 
-                elif isinstance(node, ast.FunctionDef):
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     # Only top-level functions
                     if not any(node in cls_node.body for cls_node in ast.walk(tree) if isinstance(cls_node, ast.ClassDef)):
                         if not node.name.startswith('_'):

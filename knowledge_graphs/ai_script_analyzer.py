@@ -470,8 +470,9 @@ class AIScriptAnalyzer:
                         start_line = getattr(node, 'lineno', 0)
                         end_line = getattr(node, 'end_lineno', start_line + 50)  # fallback estimate
                         
-                        # Track this variable as pydantic_ai_result within this scope
-                        self.context_manager_vars[var_name] = (start_line, end_line, "pydantic_ai_result")
+                        # For run_stream, the return type is specifically StreamedRunResult
+                        # This is the actual return type, not a generic placeholder
+                        self.context_manager_vars[var_name] = (start_line, end_line, "pydantic_ai.StreamedRunResult")
     
     def _handle_with(self, node: ast.With, result: AnalysisResult):
         """Handle regular with statements and track context manager variables"""

@@ -339,11 +339,7 @@ class KnowledgeGraphValidator:
             )
         
         # Find method in knowledge graph
-        if class_type == "pydantic_ai_result":
-            # Special handling for pydantic_ai result objects
-            method_info = await self._find_pydantic_ai_result_method(method_call.method_name)
-        else:
-            method_info = await self._find_method(class_type, method_call.method_name)
+        method_info = await self._find_method(class_type, method_call.method_name)
         
         if not method_info:
             # Check for similar method names
@@ -1130,11 +1126,7 @@ class KnowledgeGraphValidator:
         if not class_type:
             return False
         
-        # Special case: pydantic_ai result objects should be treated as knowledge graph items
-        if class_type == "pydantic_ai_result":
-            return True
-        
-        # For dotted names like "pydantic_ai.Agent", check the base module
+        # For dotted names like "pydantic_ai.Agent" or "pydantic_ai.StreamedRunResult", check the base module
         if '.' in class_type:
             base_module = class_type.split('.')[0]
             # Exact match only - "pydantic" should not match "pydantic_ai"
