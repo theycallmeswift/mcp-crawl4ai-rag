@@ -10,6 +10,8 @@ With this MCP server, you can <b>scrape anything</b> and then <b>use that knowle
 
 The primary goal is to bring this MCP server into [Archon](https://github.com/coleam00/Archon) as I evolve it to be more of a knowledge engine for AI coding assistants to build AI agents. This first version of the Crawl4AI/RAG MCP server will be improved upon greatly soon, especially making it more configurable so you can use different embedding models and run everything locally with Ollama.
 
+Consider this GitHub repository a testbed, hence why I haven't been super actively address issues and pull requests yet. I certainly will though as I bring this into Archon V2!
+
 ## Overview
 
 This MCP server provides tools that enable AI agents to crawl websites, store content in a vector database (Supabase), and perform RAG over the crawled content. It follows the best practices for building MCP servers based on the [Mem0 MCP server template](https://github.com/coleam00/mcp-mem0/) I provided on my channel previously.
@@ -61,7 +63,7 @@ The server provides essential web crawling and search tools:
 
 5. **`search_code_examples`** (requires `USE_AGENTIC_RAG=true`): Search specifically for code examples and their summaries from crawled documentation. This tool provides targeted code snippet retrieval for AI coding assistants.
 
-### Knowledge Graph Tools (requires `USE_KNOWLEDGE_GRAPH=true`)
+### Knowledge Graph Tools (requires `USE_KNOWLEDGE_GRAPH=true`, see below)
 
 6. **`parse_github_repository`**: Parse a GitHub repository into a Neo4j knowledge graph, extracting classes, methods, functions, and their relationships for hallucination detection
 7. **`check_ai_script_hallucinations`**: Analyze Python scripts for AI hallucinations by validating imports, method calls, and class usage against the knowledge graph
@@ -132,7 +134,11 @@ Before running the server, you need to set up the database with the pgvector ext
 
 ## Knowledge Graph Setup (Optional)
 
-To enable AI hallucination detection and repository analysis features, you need to set up Neo4j:
+To enable AI hallucination detection and repository analysis features, you need to set up Neo4j.
+
+Also, the knowledge graph implementation isn't fully compatible with Docker yet, so I would recommend right now running directly through uv if you want to use the hallucination detection within the MCP server!
+
+For installing Neo4j:
 
 ### Local AI Package (Recommended)
 
@@ -237,12 +243,24 @@ Applies cross-encoder reranking to search results after initial retrieval. Uses 
 - **Benefits**: Better result relevance, especially for complex queries. Works with both regular RAG search and code example search.
 
 #### 5. **USE_KNOWLEDGE_GRAPH**
-Enables AI hallucination detection and repository analysis using Neo4j knowledge graphs. When enabled, the system can parse GitHub repositories into a graph database and validate AI-generated code against real repository structures.
+Enables AI hallucination detection and repository analysis using Neo4j knowledge graphs. When enabled, the system can parse GitHub repositories into a graph database and validate AI-generated code against real repository structures. (NOT fully compatible with Docker yet, I'd recommend running through uv)
 
 - **When to use**: Enable this for AI coding assistants that need to validate generated code against real implementations, or when you want to detect when AI models hallucinate non-existent methods, classes, or incorrect usage patterns.
 - **Trade-offs**: Requires Neo4j setup and additional dependencies. Repository parsing can be slow for large codebases, and validation requires repositories to be pre-indexed.
 - **Cost**: No additional API costs for validation, but requires Neo4j infrastructure (can use free local installation or cloud AuraDB).
 - **Benefits**: Provides three powerful tools: `parse_github_repository` for indexing codebases, `check_ai_script_hallucinations` for validating AI-generated code, and `query_knowledge_graph` for exploring indexed repositories.
+
+You can now tell the AI coding assistant to add a Python GitHub repository to the knowledge graph like:
+
+"Add https://github.com/pydantic/pydantic-ai.git to the knowledge graph"
+
+Make sure the repo URL ends with .git.
+
+You can also have the AI coding assistant check for hallucinations with scripts it just created, or you can manually run the command:
+
+```
+python knowledge_graphs/ai_hallucination_detector.py [full path to your script to analyze]
+```
 
 ### Recommended Configurations
 
