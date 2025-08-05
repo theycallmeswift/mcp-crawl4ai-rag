@@ -1,131 +1,121 @@
 """
-Pytest configuration and fixtures for documentation processing tests.
+Root conftest.py for all test configurations.
+
+This module provides shared fixtures and configurations for both unit and E2E tests.
 """
 
+import asyncio
 import os
-import tempfile
-from pathlib import Path
-from unittest.mock import Mock
 import pytest
-from supabase import Client
+import pytest_asyncio
+
+from tests.support.database_helpers import (
+    load_test_environment,
+    get_neo4j_client,
+    get_supabase_client,
+    cleanup_neo4j_test_data,
+    cleanup_supabase_test_data,
+    TEST_REPOSITORIES,
+)
+from tests.support.mcp_client import MCPTestClient
 
 
-@pytest.fixture
-def temp_repo_dir():
-    """Create a temporary directory structure mimicking a repository."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        repo_path = Path(temp_dir)
-        
-        # Create various documentation files
-        docs_dir = repo_path / "docs"
-        docs_dir.mkdir()
-        
-        # README file
-        (repo_path / "README.md").write_text("# Test Repository\n\nThis is a test repository.")
-        
-        # API documentation
-        (docs_dir / "api_reference.md").write_text("# API Reference\n\nAPI documentation here.")
-        
-        # Tutorial
-        (docs_dir / "getting_started.md").write_text("# Getting Started\n\nTutorial content.")
-        
-        # Text file
-        (repo_path / "LICENSE.txt").write_text("MIT License\n\nCopyright notice.")
-        
-        # RST file
-        (docs_dir / "changelog.rst").write_text("Changelog\n=========\n\nVersion 1.0.0")
-        
-        # Large file (over 500KB)
-        large_content = "x" * (600 * 1024)  # 600KB
-        (repo_path / "large_file.md").write_text(large_content)
-        
-        # Directories to exclude
-        (repo_path / "tests").mkdir()
-        (repo_path / "tests" / "test_file.md").write_text("Test documentation")
-        
-        (repo_path / "__pycache__").mkdir()
-        (repo_path / "node_modules").mkdir()
-        (repo_path / "build").mkdir()
-        
-        yield repo_path
+# Environment variable requirements
+REQUIRED_ENV_VARS = [
+    "USE_KNOWLEDGE_GRAPH",
+    "NEO4J_URI",
+    "NEO4J_USER",
+    "NEO4J_PASSWORD",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_KEY",
+    "OPENAI_API_KEY",
+]
 
 
-@pytest.fixture
-def sample_notebook_content():
-    """Sample Jupyter notebook content for testing."""
-    return {
-        "cells": [
-            {
-                "cell_type": "markdown",
-                "metadata": {},
-                "source": [
-                    "# Sample Notebook\n",
-                    "\n",
-                    "This is a test notebook."
-                ]
-            },
-            {
-                "cell_type": "code",
-                "execution_count": 1,
-                "metadata": {},
-                "outputs": [],
-                "source": [
-                    "import pandas as pd\n",
-                    "print('Hello world')"
-                ]
-            }
-        ],
-        "metadata": {
-            "kernelspec": {
-                "display_name": "Python 3",
-                "language": "python",
-                "name": "python3"
-            }
-        },
-        "nbformat": 4,
-        "nbformat_minor": 4
-    }
+# Load environment for all tests
+load_test_environment()
 
 
-@pytest.fixture
-def mock_supabase_client():
-    """Mock Supabase client for testing."""
-    mock_client = Mock(spec=Client)
-    mock_table = Mock()
-    mock_client.table.return_value = mock_table
-    mock_table.insert.return_value = mock_table
-    mock_table.execute.return_value = Mock(data=[])
-    return mock_client
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for the test session."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+
+    yield loop
+
+    loop.close()
 
 
-# nbconvert mock no longer needed - using built-in JSON parsing
+@pytest.fixture(scope="session")
+def test_repository_config():
+    """Test repository configuration."""
+    return TEST_REPOSITORIES["mcp_crawl4ai_rag"]
 
 
-@pytest.fixture
-def repo_info():
-    """Sample repository information."""
-    return {
-        "name": "test-repo",
-        "url": "https://github.com/user/test-repo.git"
-    }
+@pytest.fixture(scope="session")
+def minimal_repository_config():
+    """Minimal test repository configuration."""
+    return TEST_REPOSITORIES["hello_world"]
 
 
-@pytest.fixture
-def doc_file_info():
-    """Sample documentation file information."""
-    return {
-        "url": "docs/api.md",
-        "markdown": "# API Documentation\n\nThis is API documentation.\n\n```python\nprint('hello')\n```"
-    }
+@pytest.fixture(scope="function")
+def environment_check():
+    """Verify required environment variables are present."""
+    missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+
+    if missing_vars:
+        pytest.skip(f"Missing required environment variables: {missing_vars}")
+
+    if os.getenv("USE_KNOWLEDGE_GRAPH") != "true":
+        pytest.skip("Knowledge graph not enabled")
 
 
-@pytest.fixture(autouse=True)
-def reset_env_vars():
-    """Reset environment variables after each test."""
-    original_env = os.environ.copy()
-    yield
-    os.environ.clear()
-    os.environ.update(original_env)
+@pytest_asyncio.fixture(scope="function")
+async def mcp_client():
+    """MCP client connected to the running dev server."""
+    client = MCPTestClient()
+
+    try:
+        await client._connect()
+        yield client
+    except Exception as e:
+        # Only skip if we can't connect initially
+        pytest.skip(f"MCP server not available: {e}")
+    finally:
+        # Manual cleanup without triggering skip
+        try:
+            if hasattr(client, "session") and client.session:
+                await client.session.__aexit__(None, None, None)
+        except Exception:
+            pass
+        try:
+            if hasattr(client, "_client_context") and client._client_context:
+                await client._client_context.__aexit__(None, None, None)
+        except Exception:
+            pass
 
 
-# Mocking fixtures will be done inline in tests to avoid import path issues
+@pytest_asyncio.fixture(scope="function")
+async def cleanup_test_data(test_repository_config):
+    """Clean up test data before and after tests."""
+    repo_name = test_repository_config["name"]
+    supabase_pattern = test_repository_config["supabase_source_pattern"]
+
+    async def cleanup():
+        neo4j_client = await get_neo4j_client()
+        try:
+            await cleanup_neo4j_test_data(neo4j_client, repo_name)
+        finally:
+            await neo4j_client.close()
+
+        supabase_client = get_supabase_client()
+        cleanup_supabase_test_data(supabase_client, supabase_pattern)
+
+    # Clean up before test
+    await cleanup()
+
+    # Yield control to test
+    yield cleanup
+
+    # Clean up after test
+    await cleanup()
