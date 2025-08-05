@@ -1593,7 +1593,7 @@ async def parse_github_repository(ctx: Context, repo_url: str) -> str:
     
     **Documentation Processing (Supabase):**
     - Discovers documentation files (.md, .rst, .txt, .ipynb)
-    - Processes Jupyter notebooks with nbconvert
+    - Processes Jupyter notebooks with built-in JSON parsing
     - Chunks and embeds documentation for semantic search
     - Extracts code examples for agentic RAG (if enabled)
     

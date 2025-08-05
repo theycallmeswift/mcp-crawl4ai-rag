@@ -804,6 +804,105 @@ def smart_chunk_markdown(text: str, chunk_size: int = 5000) -> List[str]:
 # DOCUMENTATION PROCESSING FUNCTIONS
 # ==============================================================================
 
+def convert_notebook_to_markdown(notebook_path: Path) -> str:
+    """
+    Convert Jupyter notebook to markdown using only standard Python libraries.
+    
+    Args:
+        notebook_path: Path to the .ipynb file
+        
+    Returns:
+        Markdown content as string
+        
+    Raises:
+        Exception: If notebook cannot be parsed or converted
+    """
+    import json
+    
+    with open(notebook_path, 'r', encoding='utf-8') as f:
+        notebook = json.load(f)
+    
+    markdown_parts = []
+    
+    # Add notebook title if available
+    if 'metadata' in notebook and 'kernelspec' in notebook['metadata']:
+        kernel_name = notebook['metadata']['kernelspec'].get('display_name', 'Notebook')
+        markdown_parts.append(f"# {kernel_name}\n")
+    
+    # Process each cell
+    for cell in notebook.get('cells', []):
+        cell_type = cell.get('cell_type', '')
+        source = cell.get('source', [])
+        
+        # Join source lines into content
+        if isinstance(source, list):
+            content = ''.join(source)
+        else:
+            content = str(source)
+        
+        if cell_type == 'markdown':
+            # Add markdown cell content directly
+            markdown_parts.append(content)
+            
+        elif cell_type == 'code':
+            # Add code cell as markdown code block
+            if content.strip():
+                language = _detect_code_language(notebook)
+                markdown_parts.append(f"```{language}\n{content}\n```")
+                
+                # Optionally include outputs
+                outputs = cell.get('outputs', [])
+                if outputs:
+                    for output in outputs:
+                        if output.get('output_type') == 'stream':
+                            # Add stream output
+                            stream_text = ''.join(output.get('text', []))
+                            if stream_text.strip():
+                                markdown_parts.append(f"```\n{stream_text}\n```")
+                        elif output.get('output_type') in ['execute_result', 'display_data']:
+                            # Add text representation of output
+                            data = output.get('data', {})
+                            if 'text/plain' in data:
+                                text_output = ''.join(data['text/plain'])
+                                if text_output.strip():
+                                    markdown_parts.append(f"```\n{text_output}\n```")
+        
+        # Add spacing between cells
+        markdown_parts.append("\n")
+    
+    return '\n'.join(markdown_parts)
+
+
+def _detect_code_language(notebook: dict) -> str:
+    """
+    Detect the programming language from notebook metadata.
+    
+    Args:
+        notebook: Parsed notebook JSON
+        
+    Returns:
+        Language identifier for code blocks
+    """
+    if 'metadata' in notebook and 'kernelspec' in notebook['metadata']:
+        # First try the explicit language field
+        language = notebook['metadata']['kernelspec'].get('language', '')
+        if language:
+            return language.lower()
+        
+        # Fall back to kernel name with simple processing
+        kernel_name = notebook['metadata']['kernelspec'].get('name', '').lower()
+        if kernel_name:
+            # Handle special case for R
+            if kernel_name == 'ir':
+                return 'r'
+            
+            # Remove version numbers (python3 -> python, python2 -> python)
+            import re
+            clean_name = re.sub(r'\d+$', '', kernel_name)
+            return clean_name if clean_name else kernel_name
+    
+    return 'python'  # Default to Python
+
 def discover_documentation_files(repo_path: Path) -> List[Path]:
     """
     Discover documentation files with practical filtering.
@@ -860,7 +959,7 @@ def process_document_files(doc_files: List[Path], repo_path: Path) -> List[Dict[
     """
     Process documentation files with notebook support.
     
-    - Jupyter notebooks: Use nbconvert.MarkdownExporter
+    - Jupyter notebooks: Convert to markdown using built-in JSON parsing
     - Regular files: Read as UTF-8 text
     - Return list of {"url": relative_path, "markdown": content}
     
@@ -880,12 +979,7 @@ def process_document_files(doc_files: List[Path], repo_path: Path) -> List[Dict[
             if doc_file.suffix == '.ipynb':
                 # Process Jupyter notebook
                 try:
-                    import nbconvert
-                    exporter = nbconvert.MarkdownExporter(exclude_output=False)
-                    markdown_content, _ = exporter.from_filename(str(doc_file))
-                except ImportError:
-                    print(f"nbconvert not available, skipping notebook {relative_path}")
-                    continue
+                    markdown_content = convert_notebook_to_markdown(doc_file)
                 except Exception as e:
                     print(f"Error converting notebook {relative_path}: {e}")
                     continue

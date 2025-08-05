@@ -6,3 +6,6 @@ repos
 .claude
 test_script_hallucination*
 .cursor
+.pytest_cache
+.coverage
+htmlcov/
