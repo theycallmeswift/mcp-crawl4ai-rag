@@ -1653,7 +1653,7 @@ async def parse_github_repository(ctx: Context, repo_url: str) -> str:
         # Get the repository extractor from context
         repo_extractor = ctx.request_context.lifespan_context.repo_extractor
         
-        if not repo_extractor:
+        if not repo_extractor or not repo_extractor.driver:
             return json.dumps({
                 "success": False,
                 "error": "Repository extractor not available. Check Neo4j configuration in environment variables."
