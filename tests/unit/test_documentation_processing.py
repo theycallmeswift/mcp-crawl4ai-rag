@@ -2,17 +2,12 @@
 Unit tests for documentation processing functions.
 """
 
-import os
 import json
 import tempfile
 from pathlib import Path
 import pytest
 
-import sys
-
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "src"))
-
-from utils import (
+from src.utils import (
     discover_documentation_files,
     process_document_files,
     create_repository_source_id,
@@ -214,8 +209,8 @@ class TestCreateRepositorySourceId:
         """Test with GitHub SSH URL."""
         repo_url = "git@github.com:user/repo.git"
         result = create_repository_source_id(repo_url)
-        # SSH URLs fall back to simple string replacement
-        assert result == "git@github.com:user/repo"
+        # SSH URLs should normalize to the same format as HTTPS URLs
+        assert result == "github.com/user/repo"
 
     def test_create_repository_source_id_removes_git_suffix(self):
         """Test that .git suffix is properly removed."""
@@ -223,6 +218,16 @@ class TestCreateRepositorySourceId:
         result = create_repository_source_id(repo_url)
         assert not result.endswith(".git")
         assert result == "github.com/user/repo"
+
+    def test_create_repository_source_id_consistency_ssh_https(self):
+        """Test that SSH and HTTPS URLs for the same repo generate the same source ID."""
+        https_url = "https://github.com/user/repo.git"
+        ssh_url = "git@github.com:user/repo.git"
+        
+        https_result = create_repository_source_id(https_url)
+        ssh_result = create_repository_source_id(ssh_url)
+        
+        assert https_result == ssh_result == "github.com/user/repo"
 
     def test_create_repository_source_id_handles_malformed_urls(self):
         """Test fallback behavior with invalid URLs."""
@@ -332,15 +337,15 @@ class TestCreateDocumentationMetadata:
         assert result["documentation_category"] == "documentation"
 
     def test_create_documentation_metadata_code_example_counting(
-        self, repo_info, mocker
+        self, repo_info, mocker, monkeypatch
     ):
         """Test code example counting when USE_AGENTIC_RAG=true."""
-        # Set environment variable
-        os.environ["USE_AGENTIC_RAG"] = "true"
+        # Set environment variable using monkeypatch
+        monkeypatch.setenv("USE_AGENTIC_RAG", "true")
 
         # Mock extract_code_blocks properly
         mock_extract_code_blocks = mocker.patch(
-            "utils.extract_code_blocks", return_value=['print("hello")', "import os"]
+            "src.utils.extract_code_blocks", return_value=['print("hello")', "import os"]
         )
 
         doc_file_info = {
@@ -363,8 +368,8 @@ class TestProcessRepositoryDocs:
     ):
         """Test successful processing of repository documentation."""
         # Mock the dependencies
-        mocker.patch("utils.smart_chunk_markdown", return_value=["chunk1", "chunk2"])
-        mocker.patch("utils.add_documents_to_supabase", return_value=None)
+        mocker.patch("src.utils.smart_chunk_markdown", return_value=["chunk1", "chunk2"])
+        mocker.patch("src.utils.add_documents_to_supabase", return_value=None)
 
         repo_name = "test-repo"
         repo_url = "https://github.com/user/test-repo.git"
@@ -402,7 +407,7 @@ class TestProcessRepositoryDocs:
         """Test graceful error handling during processing."""
         # Mock discover_documentation_files to raise an exception
         mocker.patch(
-            "utils.discover_documentation_files",
+            "src.utils.discover_documentation_files",
             side_effect=Exception("Processing error"),
         )
 
@@ -424,9 +429,9 @@ class TestProcessRepositoryDocs:
         """Test that returned statistics match actual processing."""
         # Configure mocks to return specific counts
         mocker.patch(
-            "utils.smart_chunk_markdown", return_value=["chunk1", "chunk2", "chunk3"]
+            "src.utils.smart_chunk_markdown", return_value=["chunk1", "chunk2", "chunk3"]
         )
-        mocker.patch("utils.add_documents_to_supabase", return_value=None)
+        mocker.patch("src.utils.add_documents_to_supabase", return_value=None)
 
         result = await process_repository_docs(
             mock_supabase_client,

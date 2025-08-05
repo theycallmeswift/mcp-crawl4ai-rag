@@ -22,13 +22,7 @@ import json
 import os
 import re
 import concurrent.futures
-import sys
-
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
-
-# Add knowledge_graphs folder to path for importing knowledge graph modules
-knowledge_graphs_path = Path(__file__).resolve().parent.parent / 'knowledge_graphs'
-sys.path.append(str(knowledge_graphs_path))
 
 from utils import (
     get_supabase_client, 
@@ -40,18 +34,16 @@ from utils import (
     update_source_info,
     extract_source_summary,
     search_code_examples,
-    process_repository_docs,
-    smart_chunk_markdown,
-    create_repository_source_id
+    smart_chunk_markdown
 )
 
-# Import knowledge graph modules
-from knowledge_graph_validator import KnowledgeGraphValidator
-from parse_repo_into_neo4j import DirectNeo4jExtractor
-from ai_script_analyzer import AIScriptAnalyzer
-from hallucination_reporter import HallucinationReporter
+from knowledge_graphs.knowledge_graph_validator import KnowledgeGraphValidator
+from knowledge_graphs.parse_repo_into_neo4j import DirectNeo4jExtractor
+from knowledge_graphs.ai_script_analyzer import AIScriptAnalyzer
+from knowledge_graphs.hallucination_reporter import HallucinationReporter
 
 # Load environment variables from the project root .env file
+from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 dotenv_path = project_root / '.env'
 

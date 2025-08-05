@@ -16,7 +16,6 @@ import logging
 import os
 import subprocess
 import shutil
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 import ast
@@ -598,9 +597,7 @@ class DirectNeo4jExtractor:
                 logger.info("Processing repository documentation...")
                 try:
                     # Import the process_repository_docs function
-                    import sys
-                    sys.path.append(str(Path(__file__).resolve().parent.parent / 'src'))
-                    from utils import process_repository_docs
+                    from src.utils import process_repository_docs
                     
                     docs_result = await process_repository_docs(
                         self.supabase_client, repo_path, repo_name, repo_url

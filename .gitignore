@@ -9,3 +9,4 @@ test_script_hallucination*
 .pytest_cache
 .coverage
 htmlcov/
+.ruff_cache/

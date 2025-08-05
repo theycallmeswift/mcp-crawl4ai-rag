@@ -99,7 +99,6 @@ def mock_supabase_client():
     return mock_client
 
 
-# nbconvert mock no longer needed - using built-in JSON parsing
 
 
 @pytest.fixture

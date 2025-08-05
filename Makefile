@@ -25,9 +25,9 @@ install-dev:
 start:
 	uv run src/crawl4ai_mcp.py
 
-# Run unit tests (default)
+# Run all tests (default)
 test:
-	uv run pytest tests/unit/ -v
+	uv run pytest tests/ -v
 
 # Run unit tests
 test-unit:

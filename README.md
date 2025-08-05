@@ -323,7 +323,8 @@ This project includes a Makefile for streamlined development workflows:
 make help          # Show all available commands
 make install-dev   # Install dev dependencies
 make start         # Run the MCP server
-make test          # Run unit tests
+make test          # Run unit and e2e tests
+make test-unit     # Run unit tests
 make test-e2e      # Run E2E tests (requires server running)
 make lint          # Run linting with fixes
 make format        # Format code

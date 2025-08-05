@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "crawl4ai-mcp"
 version = "0.1.0"
@@ -43,4 +47,12 @@ omit = ["tests/e2e/*"]
 dev = [
     "pytest>=8.3.5",
     "pytest-mock>=3.14.0",
+    "ruff>=0.12.7",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "knowledge_graphs*"]
+
+[tool.setuptools.package-dir]
+"" = "."

@@ -58,12 +58,13 @@ class MCPTestClient:
 
     async def _connect(self):
         """Connect to the MCP server."""
+        client_context = None
         try:
             # Connect to the MCP server via SSE
-            self._client_context = sse_client(self.server_url)
+            client_context = sse_client(self.server_url)
 
             # Get the streams from the client
-            read_stream, write_stream = await self._client_context.__aenter__()
+            read_stream, write_stream = await client_context.__aenter__()
 
             # Create and initialize the session
             self.session = ClientSession(
@@ -81,10 +82,18 @@ class MCPTestClient:
             # Get available tools
             tools_result = await self.session.list_tools()
             self._available_tools = [tool.name for tool in tools_result.tools]
+            
+            # Only set the client context after everything succeeds
+            self._client_context = client_context
 
         except Exception as e:
-            if self._client_context:
-                await self._client_context.__aexit__(type(e), e, e.__traceback__)
+            # Clean up the client context if it was successfully created
+            if client_context:
+                try:
+                    await client_context.__aexit__(type(e), e, e.__traceback__)
+                except Exception:
+                    # Ignore cleanup errors to avoid masking the original exception
+                    pass
             raise RuntimeError(
                 f"Failed to connect to MCP server at {self.server_url}: {e}"
             ) from e

@@ -6,9 +6,8 @@ import concurrent.futures
 from typing import List, Dict, Any, Optional, Tuple
 import json
 from supabase import create_client, Client
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import openai
-import re
 import time
 from pathlib import Path
 
@@ -407,7 +406,7 @@ def extract_code_blocks(markdown_content: str, min_length: int = 1000) -> List[D
         if len(lines) > 1:
             # Check if first line is a language specifier (no spaces, common language names)
             first_line = lines[0].strip()
-            if first_line and not ' ' in first_line and len(first_line) < 20:
+            if first_line and ' ' not in first_line and len(first_line) < 20:
                 language = first_line
                 code_content = lines[1].strip() if len(lines) > 1 else ""
             else:
@@ -546,7 +545,7 @@ def add_code_examples_to_supabase(
             if embedding and not all(v == 0.0 for v in embedding):
                 valid_embeddings.append(embedding)
             else:
-                print(f"Warning: Zero or invalid embedding detected, creating new one...")
+                print("Warning: Zero or invalid embedding detected, creating new one...")
                 # Try to create a single embedding as fallback
                 single_embedding = create_embedding(batch_texts[len(valid_embeddings)])
                 valid_embeddings.append(single_embedding)
@@ -817,7 +816,6 @@ def convert_notebook_to_markdown(notebook_path: Path) -> str:
     Raises:
         Exception: If notebook cannot be parsed or converted
     """
-    import json
     
     with open(notebook_path, 'r', encoding='utf-8') as f:
         notebook = json.load(f)
@@ -943,7 +941,7 @@ def discover_documentation_files(repo_path: Path) -> List[Path]:
                         if file_path.stat().st_size <= max_file_size:
                             doc_files.append(file_path)
                         else:
-                            print(f"Skipping large file {file_path.relative_to(repo_path)} ({file_path.stat().st_size} bytes)")
+                            print(f"Skipping large file {file_path.relative_to(repo_path)} ({file_path.stat().st_size} bytes > {max_file_size} bytes limit)")
                     except Exception as e:
                         print(f"Error checking file {file_path}: {e}")
                         continue
@@ -1018,24 +1016,44 @@ def create_repository_source_id(repo_url: str) -> str:
     """
     Create repository-level source ID for documentation.
     
+    Normalizes both SSH and HTTPS URLs to a consistent format.
+    
     Examples:
-    - github.com/user/repo
+    - https://github.com/user/repo.git -> github.com/user/repo
+    - git@github.com:user/repo.git -> github.com/user/repo
     
     Args:
-        repo_url: Repository URL
+        repo_url: Repository URL (SSH or HTTPS format)
         
     Returns:
-        Repository source ID string
+        Repository source ID string in format: domain/user/repo
     """
     try:
+        # Handle SSH URLs (git@github.com:user/repo.git)
+        if repo_url.startswith('git@'):
+            # Extract the part after 'git@' and before ':'
+            ssh_parts = repo_url.split('@', 1)[1]  # Remove 'git@'
+            if ':' in ssh_parts:
+                domain, path = ssh_parts.split(':', 1)
+                # Remove .git suffix if present
+                path = path.rstrip('.git')
+                return f"{domain}/{path}"
+        
+        # Handle HTTPS/HTTP URLs
         parsed_url = urlparse(repo_url)
-        # Remove .git suffix if present
-        path = parsed_url.path.rstrip('.git')
-        return f"{parsed_url.netloc}{path}"
+        if parsed_url.netloc and parsed_url.path:
+            # Remove .git suffix and leading slash if present
+            path = parsed_url.path.lstrip('/').rstrip('.git')
+            return f"{parsed_url.netloc}/{path}"
+            
     except Exception as e:
         print(f"Error creating source ID: {e}")
-        # Fallback to simple concatenation
-        return repo_url.replace('.git', '').replace('https://', '').replace('http://', '')
+    
+    # Fallback to simple string manipulation
+    fallback = repo_url.replace('.git', '').replace('https://', '').replace('http://', '')
+    if fallback.startswith('git@'):
+        fallback = fallback.replace('git@', '').replace(':', '/')
+    return fallback
 
 
 def create_documentation_url(repo_url: str, doc_path: str) -> str:
@@ -1258,7 +1276,7 @@ async def process_repository_docs(
                         
                         # Use the repository source ID for all code examples
                         codes_only = [block['code'] for block in code_blocks]
-                        urls = [f"{repo_source_id}/{doc_info['url']}" for _ in code_blocks]
+                        urls = [urljoin(repo_source_id.rstrip('/') + '/', doc_info['url'].lstrip('/')) for _ in code_blocks]
                         chunk_numbers = list(range(len(code_blocks)))
                         metadatas = [
                             {
