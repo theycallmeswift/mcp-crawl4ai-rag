@@ -5,6 +5,7 @@ import os
 import concurrent.futures
 from typing import List, Dict, Any, Optional, Tuple
 import json
+import re
 from supabase import create_client, Client
 from urllib.parse import urlparse, urljoin
 import openai
@@ -895,7 +896,6 @@ def _detect_code_language(notebook: dict) -> str:
                 return 'r'
             
             # Remove version numbers (python3 -> python, python2 -> python)
-            import re
             clean_name = re.sub(r'\d+$', '', kernel_name)
             return clean_name if clean_name else kernel_name
     
@@ -941,7 +941,10 @@ def discover_documentation_files(repo_path: Path) -> List[Path]:
                         if file_path.stat().st_size <= max_file_size:
                             doc_files.append(file_path)
                         else:
-                            print(f"Skipping large file {file_path.relative_to(repo_path)} ({file_path.stat().st_size} bytes > {max_file_size} bytes limit)")
+                            print(
+                                f"Skipping large file {file_path.relative_to(repo_path)} "
+                                f"({file_path.stat().st_size} bytes > {max_file_size} bytes limit)"
+                            )
                     except Exception as e:
                         print(f"Error checking file {file_path}: {e}")
                         continue
@@ -1080,6 +1083,20 @@ def create_documentation_url(repo_url: str, doc_path: str) -> str:
         print(f"Error creating documentation URL: {e}")
         # Fallback to simple concatenation
         return f"{repo_url.replace('.git', '')}/{doc_path}"
+
+
+def construct_doc_url(repo_source_id: str, doc_path: str) -> str:
+    """
+    Construct URL for documentation files using repository source ID.
+    
+    Args:
+        repo_source_id: Repository source ID (e.g., "github.com/user/repo")
+        doc_path: Relative path to documentation file
+        
+    Returns:
+        Constructed URL string
+    """
+    return urljoin(repo_source_id.rstrip('/') + '/', doc_path.lstrip('/'))
 
 
 def create_documentation_metadata(
@@ -1276,7 +1293,7 @@ async def process_repository_docs(
                         
                         # Use the repository source ID for all code examples
                         codes_only = [block['code'] for block in code_blocks]
-                        urls = [urljoin(repo_source_id.rstrip('/') + '/', doc_info['url'].lstrip('/')) for _ in code_blocks]
+                        urls = [construct_doc_url(repo_source_id, doc_info['url']) for _ in code_blocks]
                         chunk_numbers = list(range(len(code_blocks)))
                         metadatas = [
                             {

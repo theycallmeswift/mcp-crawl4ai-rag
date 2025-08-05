@@ -43,7 +43,6 @@ from knowledge_graphs.ai_script_analyzer import AIScriptAnalyzer
 from knowledge_graphs.hallucination_reporter import HallucinationReporter
 
 # Load environment variables from the project root .env file
-from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 dotenv_path = project_root / '.env'
 
@@ -1615,7 +1614,7 @@ async def parse_github_repository(ctx: Context, repo_url: str) -> str:
         # Get the repository extractor from context
         repo_extractor = ctx.request_context.lifespan_context.repo_extractor
         
-        if not repo_extractor or not repo_extractor.driver:
+        if not repo_extractor or not getattr(repo_extractor, 'driver', None):
             return json.dumps({
                 "success": False,
                 "error": "Repository extractor not available. Check Neo4j configuration in environment variables."

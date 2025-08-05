@@ -405,9 +405,8 @@ class TestProcessRepositoryDocs:
         self, temp_repo_dir, mock_supabase_client, mocker
     ):
         """Test graceful error handling during processing."""
-        # Mock discover_documentation_files to raise an exception
         mocker.patch(
-            "src.utils.discover_documentation_files",
+            "src.utils.process_document_files",
             side_effect=Exception("Processing error"),
         )
 
