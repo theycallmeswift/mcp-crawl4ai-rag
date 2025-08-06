@@ -15,6 +15,7 @@ from tests.support.mocking.supabase_operations import SupabaseMocker
 from tests.support.mocking.neo4j_operations import Neo4jMocker
 from tests.support.mocking.openai_operations import OpenAIMocker
 from tests.support.mocking.openai_operations import make_intermittent_failure
+from tests.support.helpers.assertion_helpers import copy_repo
 
 from src.crawl4ai_mcp import parse_github_repository
 
@@ -37,7 +38,7 @@ class TestRepositoryDocumentationIntegration:
               OpenAIMocker() as openai_mocker):
 
             repo_path = repo_builder.build()
-            git_mocker.mock_successful_clone(lambda target_dir: self._copy_repo(repo_path, target_dir))
+            git_mocker.mock_successful_clone(lambda target_dir: copy_repo(repo_path, target_dir))
             supabase_mocker.mock_successful_operations()
             neo4j_mocker.mock_successful_operations()
             openai_mocker.mock_embeddings()
@@ -171,7 +172,7 @@ class TestRepositoryDocumentationIntegration:
             repo_builder.with_large_file("docs/huge_document.md", size_kb=600)
             repo_path = repo_builder.build()
             
-            git_mocker.mock_successful_clone(lambda target_dir: self._copy_repo(repo_path, target_dir))
+            git_mocker.mock_successful_clone(lambda target_dir: copy_repo(repo_path, target_dir))
             supabase_mocker.track_operations()
             neo4j_mocker.mock_successful_operations()
             openai_mocker.mock_embeddings()
@@ -204,7 +205,7 @@ class TestRepositoryDocumentationIntegration:
               Neo4jMocker() as neo4j_mocker):
             
             repo_path = repo_builder.build()
-            git_mocker.mock_successful_clone(lambda target_dir: self._copy_repo(repo_path, target_dir))
+            git_mocker.mock_successful_clone(lambda target_dir: copy_repo(repo_path, target_dir))
             supabase_mocker.mock_successful_operations()
             neo4j_mocker.mock_successful_operations()
             
@@ -233,7 +234,7 @@ class TestRepositoryDocumentationIntegration:
               Neo4jMocker() as neo4j_mocker):
             
             repo_path = repo_builder.build()
-            git_mocker.mock_successful_clone(lambda target_dir: self._copy_repo(repo_path, target_dir))
+            git_mocker.mock_successful_clone(lambda target_dir: copy_repo(repo_path, target_dir))
             supabase_mocker.mock_successful_operations()
             neo4j_mocker.mock_successful_operations()
             
@@ -307,7 +308,7 @@ class TestRepositoryDocumentationIntegration:
               OpenAIMocker() as openai_mocker):
             
             repo_path = repo_builder.build()
-            git_mocker.mock_successful_clone(lambda target_dir: self._copy_repo(repo_path, target_dir))
+            git_mocker.mock_successful_clone(lambda target_dir: copy_repo(repo_path, target_dir))
             
             # Mock partial failures in document processing
             supabase_mocker.mock_successful_operations()
@@ -332,9 +333,3 @@ class TestRepositoryDocumentationIntegration:
                 doc_stats = response_data["documentation_processing"]
                 assert doc_stats["files_processed"] > 0
 
-    def _copy_repo(self, source_path: Path, target_path: Path):
-        """Helper to copy repository structure for git clone simulation."""
-        import shutil
-        if target_path.exists():
-            shutil.rmtree(target_path)
-        shutil.copytree(source_path, target_path)

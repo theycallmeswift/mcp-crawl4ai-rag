@@ -1,4 +1,257 @@
+---
+globs: tests/*.py
+alwaysApply: false
+---
 # Testing Style Guide
+
+This guide ensures consistent, high-quality test development for AI coding assistants working on the MCP Crawl4AI RAG system. Follow these patterns exactly to maintain test reliability and code quality.
+
+## Test Architecture 
+
+### Three-Layer Test Strategy
+```
+Unit Tests (/tests/unit/)     → Fast, isolated, mocked externals
+Integration Tests (/tests/integration/) → Component interactions, mocked services  
+E2E Tests (/tests/e2e/)      → Full system, real services
+```
+
+### Marker-Based Organization
+- `@pytest.mark.unit` - Isolated function/class tests
+- `@pytest.mark.integration` - Multi-component workflows with mocks
+- `@pytest.mark.e2e` - End-to-end with live external services
+
+**Auto-marking**: Tests are automatically marked based on directory location.
+
+## Essential Patterns
+
+### 1. Test Class Structure
+```python
+class TestFunctionName:
+    """Tests for specific_function behavior."""
+
+    def test_function_success_case(self, fixture):
+        """When valid input provided, then expected output returned."""
+        # Setup
+        input_data = create_test_data()
+        
+        # Exercise
+        result = function_under_test(input_data)
+        
+        # Verify
+        assert result.success is True
+        assert result.data == expected_value
+
+    def test_function_edge_case(self, fixture):
+        """When edge case input provided, then graceful handling occurs."""
+        # Pattern: Setup → Exercise → Verify
+```
+
+### 2. Fixture Usage Strategy
+
+**Available Fixtures** (auto-imported via conftest.py):
+
+**Repository Fixtures:**
+- `temp_repo_dir` → Unit tests with standard file structure
+- `temp_git_repo` → Integration tests with git metadata
+- `test_repository_config` → E2E tests with real repository data
+
+**Mock Fixtures:**
+- `mock_supabase_client` → Unit test database mock
+- `mock_all_external_services` → Integration test complete mocking
+- `mock_mcp_context` → MCP server context mock
+
+**Environment Fixtures:**
+- `test_env` → Complete environment setup
+- `environment_check` → E2E environment validation
+
+**Data Fixtures:**
+- `sample_notebook_content` → Jupyter notebook test data
+- `sample_markdown_content` → Rich markdown with code blocks
+- `repo_info` → Repository metadata
+
+### 3. Async Test Pattern
+```python
+@pytest.mark.asyncio
+async def test_async_function(self, fixture):
+    """When async operation called, then completes successfully."""
+    result = await async_function_under_test()
+
+    assert result is not None
+```
+
+### 4. Error Testing Pattern  
+```python
+def test_function_handles_invalid_input(self, fixture):
+    """When invalid input provided, then specific error raised."""
+    with pytest.raises(ValueError, match="Expected error message"):
+        function_under_test(invalid_input)
+```
+
+## Test Documentation Standards
+
+### Docstring Format
+```python
+def test_specific_behavior(self, fixture):
+    """When [condition], then [expected outcome]."""
+```
+
+**Examples:**
+- `"""When valid repository provided, then documentation files discovered."""`
+- `"""When authentication fails, then error response returned."""`
+- `"""When empty input provided, then graceful handling occurs."""`
+
+### Comment Structure
+```python
+def test_example(self, fixture):
+    """When condition met, then outcome occurs."""
+    # Setup - Prepare test data and mocks
+    input_data = create_test_input()
+    
+    # Exercise - Call function under test
+    result = function_under_test(input_data)
+    
+    # Verify - Assert expected outcomes
+    assert result.success is True
+```
+
+## Service Integration Testing
+
+### Mock Service Pattern
+```python
+@pytest.mark.integration
+async def test_with_mocked_services(self, mock_all_external_services):
+    """Integration test with all external services mocked."""
+    # All external calls (Supabase, Neo4j, OpenAI, Git) are mocked
+    result = await complex_workflow()
+    assert result["success"] is True
+```
+
+### E2E Service Pattern  
+```python
+@pytest.mark.e2e
+async def test_with_real_services(self, environment_check, cleanup_test_data):
+    """E2E test with real external services."""
+    # Requires live services - auto-skipped if env not configured
+    result = await full_system_workflow()
+    assert result["success"] is True
+    # cleanup_test_data automatically cleans databases
+```
+
+## Test Data Management
+
+### Use Fixture Builders
+```python
+def test_with_custom_repo(self):
+    """When custom repository structure needed, then use builder pattern."""
+    with create_standard_repo() as builder:
+        repo_path = builder.build()
+        # Use repo_path for testing
+```
+
+### Use Helper Functions
+```python
+def test_custom_notebook(self):
+    """When custom notebook needed, then use helper function."""
+    notebook = create_sample_notebook("Title", ["code_cell_1", "code_cell_2"])
+    result = process_notebook(notebook)
+    assert result is not None
+```
+
+## Critical Requirements
+
+### DO
+✅ Use existing fixtures (auto-imported from conftest.py)  
+✅ Follow Setup → Exercise → Verify pattern  
+✅ Write descriptive "When/Then" docstrings  
+✅ Use appropriate test markers for isolation level  
+✅ Mock external services in unit/integration tests  
+✅ Use cleanup fixtures for E2E tests  
+✅ Test both success and error scenarios  
+
+### DON'T  
+❌ Import fixtures explicitly (they're auto-available)  
+❌ Create new conftest.py files  
+❌ Use real services in unit/integration tests  
+❌ Duplicate fixture logic  
+❌ Write tests without clear assertions  
+❌ Mix test isolation levels  
+❌ Skip error case testing  
+
+## Test Execution
+
+### Run Individual Tests
+```bash
+# Run a specific test file
+uv run pytest tests/unit/utils/test_documentation.py -v
+
+# Run a specific test function
+uv run pytest tests/unit/utils/test_documentation.py::TestDiscoverDocumentationFiles::test_discover_documentation_files_basic -v
+
+# Run a specific test class
+uv run pytest tests/integration/test_repository_documentation_integration.py::TestRepositoryDocumentationIntegration -v
+```
+
+### Run Test Types by Directory
+```bash
+# Unit tests only (fast)
+make test-unit
+
+# Integration tests only  
+make test-integration
+
+# E2E tests only (requires live services)
+make test-e2e
+```
+
+### Run All Tests
+```bash
+# All tests (unit + integration + e2e)
+make test
+```
+
+### Environment Requirements
+- **Unit/Integration**: No external services required
+- **E2E**: Requires `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `OPENAI_API_KEY`, `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`
+
+## Quality Checklist
+
+Before committing tests, verify:
+- [ ] Test has clear "When/Then" docstring
+- [ ] Appropriate fixtures used for test type
+- [ ] Setup → Exercise → Verify pattern followed  
+- [ ] Both success and error cases covered
+- [ ] Async tests use `@pytest.mark.asyncio`
+- [ ] E2E tests use `environment_check` and `cleanup_test_data`
+- [ ] No hardcoded values (use fixtures/helpers)
+- [ ] Assertions are specific and meaningful
+
+## Common Anti-Patterns to Avoid
+
+❌ **Importing fixtures directly**
+```python
+# Wrong
+from tests.support.fixtures.mock_fixtures import mock_supabase_client
+```
+
+❌ **Mixed isolation levels**  
+```python
+# Wrong - unit test using real services
+def test_unit_function(self, real_supabase_client):
+```
+
+❌ **Vague docstrings**
+```python
+# Wrong  
+def test_function(self):
+    """Test the function."""
+```
+
+❌ **No error testing**
+```python
+# Incomplete - only tests success case
+def test_function_success(self):
+    # Missing corresponding error case test
+```# Testing Style Guide
 
 This guide ensures consistent, high-quality test development for AI coding assistants working on the MCP Crawl4AI RAG system. Follow these patterns exactly to maintain test reliability and code quality.
 

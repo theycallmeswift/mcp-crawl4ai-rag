@@ -9,6 +9,9 @@ from pathlib import Path
 
 def smart_chunk_markdown(text: str, chunk_size: int = 5000) -> List[str]:
     """Split text into chunks, respecting code blocks and paragraphs."""
+    if not text or text.strip() == "":
+        return []
+        
     chunks = []
     start = 0
     text_length = len(text)

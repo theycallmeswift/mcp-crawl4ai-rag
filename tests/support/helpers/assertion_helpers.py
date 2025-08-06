@@ -2,6 +2,8 @@
 
 from typing import Dict, Any, List, Optional
 import json
+import shutil
+from pathlib import Path
 
 
 def assert_response_structure(response_data: Dict[str, Any], success: bool = True):
@@ -191,6 +193,22 @@ def assert_mock_called_with_pattern(mock_obj, pattern: str, call_index: int = 0)
     call_args = mock_obj.call_args_list[call_index]
     call_str = str(call_args)
     assert pattern in call_str, f"Pattern '{pattern}' not found in call: {call_str}"
+
+
+def copy_repo(source_path: Path, target_path: Path):
+    """
+    Helper to copy repository structure for git clone simulation.
+    
+    This function safely copies a source repository directory to a target location,
+    removing the target directory if it already exists to ensure a clean copy.
+    
+    Args:
+        source_path: Path to the source repository directory
+        target_path: Path to the target directory where the repo should be copied
+    """
+    if target_path.exists():
+        shutil.rmtree(target_path)
+    shutil.copytree(source_path, target_path)
 
 
 # Convenient aliases for common assertions

@@ -700,7 +700,7 @@ async def get_available_sources(ctx: Context) -> str:
                 sources.append({
                     "source_id": source.get("source_id"),
                     "summary": source.get("summary"),
-                    "total_words": source.get("total_words"),
+                    "total_words": source.get("total_word_count"),
                     "created_at": source.get("created_at"),
                     "updated_at": source.get("updated_at")
                 })

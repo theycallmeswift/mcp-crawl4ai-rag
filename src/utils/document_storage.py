@@ -225,7 +225,8 @@ def update_source_info(client: Client, source_id: str, summary: str, word_count:
         client.table("sources").upsert({
             "source_id": source_id,
             "summary": summary,
-            "total_word_count": word_count
+            "total_word_count": word_count,
+            "updated_at": "now()"
         }).execute()
     except Exception as e:
         print(f"Error updating source info for {source_id}: {e}")

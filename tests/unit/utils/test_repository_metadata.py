@@ -227,7 +227,7 @@ class TestCreateDocumentationMetadata:
         # Setup
         monkeypatch.setenv("USE_AGENTIC_RAG", "true")
         mock_extract_code_blocks = mocker.patch(
-            "src.utils.code_extraction.extract_code_blocks", return_value=['print("hello")', "import os"]
+            "src.utils.repository_metadata.extract_code_blocks", return_value=['print("hello")', "import os"]
         )
         doc_file_info = {
             "url": "docs/examples.md",

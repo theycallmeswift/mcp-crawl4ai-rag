@@ -2,7 +2,7 @@
 Code block extraction, summarization, storage.
 """
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 from supabase import Client
 import openai
@@ -258,7 +258,7 @@ def search_code_examples(
     client: Client, 
     query: str, 
     match_count: int = 10, 
-    filter_metadata: Dict[str, Any] = None
+    filter_metadata: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Search for code examples in Supabase using vector similarity.
