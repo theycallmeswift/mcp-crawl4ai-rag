@@ -1,6 +1,5 @@
 # Testing Style Guide
 
-## Objective
 This guide ensures consistent, high-quality test development for AI coding assistants working on the MCP Crawl4AI RAG system. Follow these patterns exactly to maintain test reliability and code quality.
 
 ## Test Architecture 
@@ -72,6 +71,7 @@ class TestFunctionName:
 async def test_async_function(self, fixture):
     """When async operation called, then completes successfully."""
     result = await async_function_under_test()
+
     assert result is not None
 ```
 
@@ -175,19 +175,34 @@ def test_custom_notebook(self):
 
 ## Test Execution
 
-### Run Specific Test Types
+### Run Individual Tests
+```bash
+# Run a specific test file
+uv run pytest tests/unit/utils/test_documentation.py -v
+
+# Run a specific test function
+uv run pytest tests/unit/utils/test_documentation.py::TestDiscoverDocumentationFiles::test_discover_documentation_files_basic -v
+
+# Run a specific test class
+uv run pytest tests/integration/test_repository_documentation_integration.py::TestRepositoryDocumentationIntegration -v
+```
+
+### Run Test Types by Directory
 ```bash
 # Unit tests only (fast)
-pytest -m unit
+make test-unit
 
 # Integration tests only  
-pytest -m integration
+make test-integration
 
 # E2E tests only (requires live services)
-pytest -m e2e
+make test-e2e
+```
 
-# All tests with coverage
-pytest --cov=src --cov-report=term-missing
+### Run All Tests
+```bash
+# All tests (unit + integration + e2e)
+make test
 ```
 
 ### Environment Requirements
@@ -233,5 +248,3 @@ def test_function(self):
 def test_function_success(self):
     # Missing corresponding error case test
 ```
-
-This style guide ensures consistent, maintainable tests that AI assistants can follow reliably.

@@ -323,11 +323,10 @@ This project includes a Makefile for streamlined development workflows:
 make help          # Show all available commands
 make install-dev   # Install dev dependencies
 make start         # Run the MCP server
-make test          # Run all tests (unit + integration)
+make test          # Run all tests (unit + integration + e2e)
 make test-unit     # Run unit tests only
-make test-integration  # Run integration and E2E tests
-make test-integration-only  # Run integration tests (exclude E2E)
-make test-e2e      # Run E2E tests (requires server running)
+make test-integration  # Run integration tests only
+make test-e2e      # Run E2E tests only (requires live services)
 make lint          # Run linting with fixes
 make format        # Format code
 make clean         # Remove temp files and caches
@@ -349,14 +348,13 @@ The project includes comprehensive test coverage across multiple test types:
 # Install development dependencies
 make install-dev
 
-# Run all tests (unit + integration, excluding E2E)
+# Run all tests (unit + integration + e2e)
 make test
 
 # Run specific test types
-make test-unit                 # Unit tests only
-make test-integration-only     # Integration tests only (with mocks)
-make test-e2e                 # E2E tests (requires live services)
-make test-integration         # Integration + E2E tests
+make test-unit          # Unit tests only
+make test-integration   # Integration tests only (with mocks)
+make test-e2e          # E2E tests only (requires live services)
 ```
 
 ### Test Requirements
@@ -387,17 +385,6 @@ NEO4J_URI=your_neo4j_uri
 NEO4J_USERNAME=your_neo4j_username
 NEO4J_PASSWORD=your_neo4j_password
 ```
-
-### Test Structure
-
-The test suite follows a four-phase structure (Setup → Exercise → Verify → Teardown) and includes:
-
-- **Repository Documentation Integration Tests**: Test document processing pipeline with various repository configurations
-- **MCP Tool Integration Tests**: Test cross-tool workflows and response format consistency
-- **Advanced RAG Strategy Tests**: Validate advanced features like contextual embeddings and agentic RAG
-- **E2E Happy Path Tests**: Full system validation with real services
-
-For detailed information about test fixtures and patterns, see [`tests/support/fixtures/README.md`](tests/support/fixtures/README.md).
 
 ## Integration with MCP Clients
 
@@ -535,5 +522,6 @@ This implementation provides a foundation for building more complex MCP servers 
 
 1. Add your own tools by creating methods with the `@mcp.tool()` decorator
 2. Create your own lifespan function to add your own dependencies
-3. Modify the `utils.py` file for any helper functions you need
+3. Modify the modular `src/utils/` modules for any helper functions you need
 4. Extend the crawling capabilities by adding more specialized crawlers
+5. Add comprehensive tests following the established patterns in `tests/`
