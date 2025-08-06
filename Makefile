@@ -1,17 +1,18 @@
-.PHONY: install install-dev start test test-unit test-e2e lint format clean help
+.PHONY: install install-dev start test test-unit test-integration test-e2e lint format clean help
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  install     - Install production dependencies"
-	@echo "  install-dev - Install development dependencies"
-	@echo "  start       - Run the MCP server"
-	@echo "  test        - Run unit tests (default)"
-	@echo "  test-unit   - Run unit tests"
-	@echo "  test-e2e    - Run E2E tests (requires MCP server)"
-	@echo "  lint        - Run linting with fix enabled"
-	@echo "  format      - Run formatting"
-	@echo "  clean       - Remove temporary files like __pycache__"
+	@echo "  install            - Install production dependencies"
+	@echo "  install-dev        - Install development dependencies"
+	@echo "  start              - Run the MCP server"
+	@echo "  test               - Run all tests (unit + integration + e2e)"
+	@echo "  test-unit          - Run unit tests only"
+	@echo "  test-integration   - Run integration tests only"
+	@echo "  test-e2e           - Run E2E tests only (requires live services)"
+	@echo "  lint               - Run linting with fix enabled"
+	@echo "  format             - Run formatting"
+	@echo "  clean              - Remove temporary files like __pycache__"
 
 # Install production dependencies
 install:
@@ -25,15 +26,19 @@ install-dev:
 start:
 	uv run src/crawl4ai_mcp.py
 
-# Run all tests (default)
+# Run all tests (unit + integration + e2e)
 test:
 	uv run pytest tests/ -v
 
-# Run unit tests
+# Run unit tests only
 test-unit:
 	uv run pytest tests/unit/ -v
 
-# Run E2E tests (requires MCP server running)
+# Run integration tests only
+test-integration:
+	uv run pytest tests/integration/ -v
+
+# Run E2E tests only (requires live services)
 test-e2e:
 	uv run pytest tests/e2e/ -v
 

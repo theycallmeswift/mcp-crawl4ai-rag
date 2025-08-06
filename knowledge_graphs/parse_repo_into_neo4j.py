@@ -502,9 +502,22 @@ class DirectNeo4jExtractor:
                 logger.warning(f"Could not fully remove {target_dir}: {e}. Proceeding anyway...")
         
         logger.info(f"Running git clone from {repo_url}")
-        subprocess.run(['git', 'clone', '--depth', '1', repo_url, target_dir], check=True)
-        logger.info("Repository cloned successfully")
-        return target_dir
+        try:
+            subprocess.run(['git', 'clone', '--depth', '1', repo_url, target_dir], 
+                         check=True, capture_output=True, text=True)
+            logger.info("Repository cloned successfully")
+            return target_dir
+        except subprocess.CalledProcessError as e:
+            # Extract meaningful error message from stderr
+            error_msg = e.stderr.strip() if e.stderr else str(e)
+            if "fatal:" in error_msg:
+                # Extract just the fatal error message
+                error_msg = error_msg.split("fatal:")[-1].strip()
+            elif not error_msg:
+                error_msg = f"Git clone failed with exit code {e.returncode}"
+            
+            logger.error(f"Git clone failed: {error_msg}")
+            raise RuntimeError(f"Git clone failed: {error_msg}") from e
     
     def get_python_files(self, repo_path: str) -> List[Path]:
         """Get Python files, focusing on main source directories"""
@@ -597,7 +610,7 @@ class DirectNeo4jExtractor:
                 logger.info("Processing repository documentation...")
                 try:
                     # Import the process_repository_docs function
-                    from src.utils import process_repository_docs
+                    from src.utils.documentation import process_repository_docs
                     
                     docs_result = await process_repository_docs(
                         self.supabase_client, repo_path, repo_name, repo_url

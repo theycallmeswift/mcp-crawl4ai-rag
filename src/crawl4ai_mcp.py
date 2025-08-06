@@ -24,18 +24,11 @@ import re
 import concurrent.futures
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 
-from utils import (
-    get_supabase_client, 
-    add_documents_to_supabase, 
-    search_documents,
-    extract_code_blocks,
-    generate_code_example_summary,
-    add_code_examples_to_supabase,
-    update_source_info,
-    extract_source_summary,
-    search_code_examples,
-    smart_chunk_markdown
-)
+from src.utils.supabase_client import get_supabase_client
+from src.utils.document_storage import add_documents_to_supabase, search_documents, update_source_info, extract_source_summary
+from src.utils.code_extraction import extract_code_blocks, generate_code_example_summary, add_code_examples_to_supabase, search_code_examples
+from src.utils.text_processing import smart_chunk_markdown
+from src.utils.documentation import process_repository_docs
 
 from knowledge_graphs.knowledge_graph_validator import KnowledgeGraphValidator
 from knowledge_graphs.parse_repo_into_neo4j import DirectNeo4jExtractor
@@ -707,7 +700,7 @@ async def get_available_sources(ctx: Context) -> str:
                 sources.append({
                     "source_id": source.get("source_id"),
                     "summary": source.get("summary"),
-                    "total_words": source.get("total_words"),
+                    "total_words": source.get("total_word_count"),
                     "created_at": source.get("created_at"),
                     "updated_at": source.get("updated_at")
                 })
@@ -906,7 +899,7 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
             # Hybrid search: combine vector and keyword search
             
             # Import the search function from utils
-            from utils import search_code_examples as search_code_examples_impl
+            from src.utils.code_extraction import search_code_examples as search_code_examples_impl
             
             # 1. Get vector search results (get more to account for filtering)
             vector_results = search_code_examples_impl(
@@ -973,7 +966,7 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
             
         else:
             # Standard vector search only
-            from utils import search_code_examples as search_code_examples_impl
+            from src.utils.code_extraction import search_code_examples as search_code_examples_impl
             
             results = search_code_examples_impl(
                 client=supabase_client,
