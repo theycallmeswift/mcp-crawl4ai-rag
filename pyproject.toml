@@ -36,12 +36,24 @@ python_functions = ["test_*"]
 addopts = "--cov=src --cov-report=term-missing --cov-report=html"
 markers = [
     "e2e: marks tests as end-to-end tests",
+    "integration: marks tests as integration tests",
     "unit: marks tests as unit tests"
+]
+filterwarnings = [
+    # Ignore deprecation warnings from external libraries
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::DeprecationWarning:fake_http_header.*",
+    "ignore::DeprecationWarning:importlib.*",
+    # Ignore specific Pydantic warnings
+    "ignore:Support for class-based.*:DeprecationWarning",
+    # Ignore importlib resource warnings
+    "ignore:.*read_text.*deprecated.*:DeprecationWarning",
+    "ignore:.*open_text.*deprecated.*:DeprecationWarning",
 ]
 
 [tool.coverage.run]
-# Exclude E2E tests from coverage since they test external integration
-omit = ["tests/e2e/*"]
+# Exclude E2E and integration tests from coverage since they test external integration
+omit = ["tests/e2e/*", "tests/integration/*"]
 
 [dependency-groups]
 dev = [
