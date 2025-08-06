@@ -14,6 +14,7 @@ from tests.support.mocking.git_operations import GitMocker
 from tests.support.mocking.supabase_operations import SupabaseMocker
 from tests.support.mocking.neo4j_operations import Neo4jMocker
 from tests.support.mocking.openai_operations import OpenAIMocker
+from tests.support.mocking.openai_operations import make_intermittent_failure
 
 from src.crawl4ai_mcp import parse_github_repository
 
@@ -311,14 +312,11 @@ class TestRepositoryDocumentationIntegration:
             # Mock partial failures in document processing
             supabase_mocker.mock_successful_operations()
             
-            # Mock some OpenAI failures (but not all)
-            call_count = 0
-            def intermittent_failure(*args, **kwargs):
-                nonlocal call_count
-                call_count += 1
-                if call_count % 3 == 0:  # Fail every 3rd call
-                    raise Exception("API rate limit")
-                return openai_mocker.mock_embeddings()(*args, **kwargs)
+            intermittent_failure = make_intermittent_failure(
+                openai_mocker.mock_embeddings(),
+                fail_every=3,
+                exception=Exception("API rate limit")
+            )
             
             with patch("openai.embeddings.create", side_effect=intermittent_failure):
                 neo4j_mocker.mock_successful_operations()

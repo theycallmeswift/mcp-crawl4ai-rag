@@ -223,21 +223,22 @@ def update_source_info(client: Client, source_id: str, summary: str, word_count:
     try:
         # Upsert (insert or update) the source record
         client.table("sources").upsert({
-            "id": source_id,
+            "source_id": source_id,
             "summary": summary,
-            "word_count": word_count
+            "total_word_count": word_count
         }).execute()
     except Exception as e:
         print(f"Error updating source info for {source_id}: {e}")
 
 
-def extract_source_summary(source_id: str, content: str) -> str:
+def extract_source_summary(source_id: str, content: str, max_length: int = 2000) -> str:
     """
     Generate a summary for a source using LLM.
     
     Args:
         source_id: Source identifier
         content: Content to summarize
+        max_length: Maximum length of content to use for summary generation
         
     Returns:
         Generated summary
@@ -248,9 +249,14 @@ def extract_source_summary(source_id: str, content: str) -> str:
         return f"Documentation for {source_id}"
     
     try:
+        # Truncate content to max_length to ensure consistent behavior
+        truncated_content = content[:max_length]
+        if len(content) > max_length:
+            truncated_content += "..."
+        
         prompt = f"""Please provide a concise 2-3 sentence summary of the following content from {source_id}:
 
-{content[:2000]}
+{truncated_content}
 
 Focus on the main purpose and key topics covered."""
 

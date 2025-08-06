@@ -200,8 +200,8 @@ class TestProcessRepositoryDocs:
     ):
         """Test successful processing of repository documentation."""
         # Setup
-        mocker.patch("src.utils.documentation.smart_chunk_markdown", return_value=["chunk1", "chunk2"])
-        mocker.patch("src.utils.documentation.add_documents_to_supabase", return_value=None)
+        mocker.patch("src.utils.text_processing.smart_chunk_markdown", return_value=["chunk1", "chunk2"])
+        mocker.patch("src.utils.document_storage.add_documents_to_supabase", return_value=None)
         repo_name = "test-repo"
         repo_url = "https://github.com/user/test-repo.git"
 
@@ -269,7 +269,7 @@ class TestProcessRepositoryDocs:
         mocker.patch(
             "src.utils.documentation.smart_chunk_markdown", return_value=["chunk1", "chunk2", "chunk3"]
         )
-        mocker.patch("src.utils.documentation.add_documents_to_supabase", return_value=None)
+        mocker.patch("src.utils.document_storage.add_documents_to_supabase", return_value=None)
 
         # Exercise
         result = await process_repository_docs(

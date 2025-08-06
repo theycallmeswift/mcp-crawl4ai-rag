@@ -181,3 +181,42 @@ def create_mock_contextual_summary(content: str, context: str = "") -> str:
         summary += f" Context: {context[:50]}..."
     
     return summary
+
+
+def make_intermittent_failure(success_function, fail_every: int = 3, exception: Exception = None):
+    """Create a function that fails intermittently for testing resilience.
+    
+    This utility creates a wrapper function that calls the success_function normally
+    but raises an exception on every nth call. Useful for testing retry logic
+    and error handling in integration tests.
+    
+    Args:
+        success_function: The function to call on successful attempts
+        fail_every: Fail on every nth call (default: 3)
+        exception: Exception to raise on failure (default: Exception("API rate limit"))
+    
+    Returns:
+        A function that intermittently fails
+    
+    Example:
+        >>> mock_embeddings = openai_mocker.mock_embeddings()
+        >>> intermittent_failure = make_intermittent_failure(
+        ...     mock_embeddings,
+        ...     fail_every=3,
+        ...     exception=Exception("API rate limit")
+        ... )
+        >>> # Use intermittent_failure as a side_effect in your mock
+    """
+    if exception is None:
+        exception = Exception("API rate limit")
+    
+    call_count = 0
+    
+    def intermittent_function(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count % fail_every == 0:
+            raise exception
+        return success_function(*args, **kwargs)
+    
+    return intermittent_function

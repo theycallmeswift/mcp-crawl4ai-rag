@@ -7,7 +7,7 @@ from typing import Dict, Any
 from urllib.parse import urlparse, urljoin
 from pathlib import Path
 
-from .code_extraction import extract_code_blocks
+
 
 
 def create_repository_source_id(repo_url: str) -> str:
@@ -131,6 +131,9 @@ def create_documentation_metadata(
     # Count code blocks if agentic RAG is enabled
     code_example_count = 0
     if os.getenv("USE_AGENTIC_RAG", "false") == "true":
+        # Lazy import to avoid circular dependency
+        from .code_extraction import extract_code_blocks
+
         code_example_count = len(extract_code_blocks(content, min_length=200))
     
     return {
