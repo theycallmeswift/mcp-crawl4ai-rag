@@ -1,1 +1,0 @@
-"""Mocking utilities for testing external dependencies."""

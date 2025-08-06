@@ -1,1 +1,0 @@
-"""Test fixtures for MCP Crawl4AI RAG system."""
