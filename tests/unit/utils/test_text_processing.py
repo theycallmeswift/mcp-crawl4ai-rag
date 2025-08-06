@@ -103,9 +103,7 @@ More text after code block."""
         """Test behavior with only whitespace."""
         result = smart_chunk_markdown("   \n\n   ")
 
-        assert len(result) <= 1
-        if result:
-            assert result[0].strip() == ""
+        assert result == []
 
 
 class TestConvertNotebookToMarkdown:
