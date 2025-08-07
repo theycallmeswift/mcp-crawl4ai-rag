@@ -128,6 +128,13 @@ def mock_mcp_context():
     mock_context.request_context.lifespan_context = Mock()
     mock_context.request_context.lifespan_context.repo_extractor = mock_repo_extractor
     
+    # Add Supabase client mock for perform_rag_query and other tools
+    mock_supabase_client = Mock()
+    mock_context.request_context.lifespan_context.supabase_client = mock_supabase_client
+    
+    # Add reranking model mock (set to None by default - tests can override)
+    mock_context.request_context.lifespan_context.reranking_model = None
+    
     return mock_context
 
 

@@ -23,12 +23,18 @@ class SupabaseMocker:
         mock_table.update.return_value = mock_table
         mock_table.delete.return_value = mock_table
         mock_table.eq.return_value = mock_table
+        mock_table.ilike.return_value = mock_table
+        mock_table.or_.return_value = mock_table
+        mock_table.limit.return_value = mock_table
         mock_table.execute.return_value = self._create_success_response()
         
         self.mock_client.table.return_value = mock_table
+        self.mock_client.from_.return_value = mock_table
         
-        # Mock RPC operations
-        self.mock_client.rpc.return_value = mock_table
+        # Mock RPC operations - return a mock that has an execute method
+        mock_rpc = Mock()
+        mock_rpc.execute.return_value = self._create_success_response([])  # Empty results by default
+        self.mock_client.rpc.return_value = mock_rpc
         
         self.client_patcher = patch("src.utils.supabase_client.get_supabase_client")
         self.client_patcher.start().return_value = self.mock_client
