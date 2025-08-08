@@ -4,11 +4,8 @@ OpenAI embedding functions and contextual processing.
 import os
 import concurrent.futures
 from typing import List, Tuple
-import openai
 import time
-
-# Load OpenAI API key for embeddings
-openai.api_key = os.getenv("OPENAI_API_KEY")
+from src.utils.openai_client import get_openai_client
 
 
 def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
@@ -29,7 +26,8 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     
     for retry in range(max_retries):
         try:
-            response = openai.embeddings.create(
+            client = get_openai_client()
+            response = client.embeddings.create(
                 model="text-embedding-3-small", # Hardcoding embedding model for now, will change this later to be more dynamic
                 input=texts
             )
@@ -49,7 +47,8 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
                 
                 for i, text in enumerate(texts):
                     try:
-                        individual_response = openai.embeddings.create(
+                        client = get_openai_client()
+                        individual_response = client.embeddings.create(
                             model="text-embedding-3-small",
                             input=[text]
                         )
@@ -110,7 +109,8 @@ Here is the chunk we want to situate within the whole document
 Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
 
         # Call the OpenAI API to generate contextual information
-        response = openai.chat.completions.create(
+        client = get_openai_client()
+        response = client.chat.completions.create(
             model=model_choice,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that provides concise contextual information."},

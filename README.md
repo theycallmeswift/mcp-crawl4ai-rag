@@ -197,6 +197,7 @@ USE_HYBRID_SEARCH=false
 USE_AGENTIC_RAG=false
 USE_RERANKING=false
 USE_KNOWLEDGE_GRAPH=false
+USE_LLM_QUERY_PLANNING=false
 
 # Supabase Configuration
 SUPABASE_URL=your_supabase_project_url
@@ -262,6 +263,28 @@ You can also have the AI coding assistant check for hallucinations with scripts 
 python knowledge_graphs/ai_hallucination_detector.py [full path to your script to analyze]
 ```
 
+#### 6. **USE_LLM_QUERY_PLANNING**
+Enables intelligent query preprocessing using an LLM to optimize search strategies. When enabled, complex descriptive queries are analyzed and transformed into optimized search plans that include semantic queries, keywords, and search terms. This significantly improves search results for natural language queries that would otherwise return poor results with exact substring matching.
+
+- **When to use**: Enable this when users ask complex, descriptive questions like "Agent Inbox documentation overview" or "how to implement authentication with custom handlers". Essential for AI coding assistants where users naturally ask conversational questions.
+- **Trade-offs**: Adds ~100-200ms latency for uncached queries (cached queries are near-instant). Requires OpenAI API access for query analysis.
+- **Cost**: Minimal - uses GPT-3.5-turbo for query preprocessing (~$0.0001 per query). Results are cached to minimize API calls.
+- **Benefits**: Dramatically improves search results for complex queries. Transforms failing queries into successful ones by understanding user intent and generating optimal search strategies.
+
+**How it works**: The system analyzes the user's query and generates:
+- **search_terms**: Key phrases likely to appear verbatim in documents
+- **keywords**: Individual terms including synonyms and related concepts
+- **semantic_query**: A reformulated query optimized for vector search
+- **search_breadth**: Determines if the query is narrow, medium, or broad in scope
+
+Example transformation:
+- Input: "Agent Inbox documentation overview"
+- Output:
+  - search_terms: ["Agent Inbox", "documentation", "overview"]
+  - keywords: ["agent", "inbox", "docs", "documentation", "overview", "guide", "introduction"]
+  - semantic_query: "What is Agent Inbox and how does it work? Overview and documentation guide"
+  - search_breadth: "broad"
+
 ### Recommended Configurations
 
 **For general documentation RAG:**
@@ -270,6 +293,7 @@ USE_CONTEXTUAL_EMBEDDINGS=false
 USE_HYBRID_SEARCH=true
 USE_AGENTIC_RAG=false
 USE_RERANKING=true
+USE_LLM_QUERY_PLANNING=true
 ```
 
 **For AI coding assistant with code examples:**
@@ -279,6 +303,7 @@ USE_HYBRID_SEARCH=true
 USE_AGENTIC_RAG=true
 USE_RERANKING=true
 USE_KNOWLEDGE_GRAPH=false
+USE_LLM_QUERY_PLANNING=true
 ```
 
 **For AI coding assistant with hallucination detection:**
@@ -288,6 +313,7 @@ USE_HYBRID_SEARCH=true
 USE_AGENTIC_RAG=true
 USE_RERANKING=true
 USE_KNOWLEDGE_GRAPH=true
+USE_LLM_QUERY_PLANNING=true
 ```
 
 **For fast, basic RAG:**
@@ -297,6 +323,7 @@ USE_HYBRID_SEARCH=true
 USE_AGENTIC_RAG=false
 USE_RERANKING=false
 USE_KNOWLEDGE_GRAPH=false
+USE_LLM_QUERY_PLANNING=false
 ```
 
 ## Running the Server

@@ -29,6 +29,7 @@ from src.utils.document_storage import add_documents_to_supabase, search_documen
 from src.utils.code_extraction import extract_code_blocks, generate_code_example_summary, add_code_examples_to_supabase, search_code_examples
 from src.utils.text_processing import smart_chunk_markdown
 from src.utils.documentation import process_repository_docs
+from src.utils.query_preprocessing import plan_search_strategy, build_keyword_conditions
 
 from knowledge_graphs.knowledge_graph_validator import KnowledgeGraphValidator
 from knowledge_graphs.parse_repo_into_neo4j import DirectNeo4jExtractor
@@ -741,26 +742,50 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
         # Check if hybrid search is enabled
         use_hybrid_search = os.getenv("USE_HYBRID_SEARCH", "false") == "true"
         
+        # Check if LLM query preprocessing is enabled
+        use_llm_query_planning = os.getenv("USE_LLM_QUERY_PLANNING", "false") == "true"
+        
         # Prepare filter if source is provided and not empty
         filter_metadata = None
         if source and source.strip():
             filter_metadata = {"source": source}
         
+        # Apply query preprocessing if enabled
+        search_plan = None
+        if use_llm_query_planning:
+            try:
+                search_plan = plan_search_strategy(query)
+                print(f"Query preprocessing: {search_plan}")
+            except Exception as e:
+                print(f"Query preprocessing failed, falling back to original query: {e}")
+                search_plan = None
+        
         if use_hybrid_search:
             # Hybrid search: combine vector and keyword search
             
             # 1. Get vector search results (get more to account for filtering)
+            # Use semantic query from search plan if available
+            vector_query = search_plan.semantic_query if search_plan else query
             vector_results = search_documents(
                 client=supabase_client,
-                query=query,
+                query=vector_query,
                 match_count=match_count * 2,  # Get double to have room for filtering
                 filter_metadata=filter_metadata
             )
             
             # 2. Get keyword search results using ILIKE
             keyword_query = supabase_client.from_('crawled_pages')\
-                .select('id, url, chunk_number, content, metadata, source_id')\
-                .ilike('content', f'%{query}%')
+                .select('id, url, chunk_number, content, metadata, source_id')
+            
+            # Use keywords from search plan if available
+            if search_plan and search_plan.keywords:
+                # Build OR conditions for all keywords
+                keyword_conditions = build_keyword_conditions(search_plan.keywords)
+                if keyword_conditions:
+                    keyword_query = keyword_query.or_(keyword_conditions)
+            else:
+                # Fallback to original query
+                keyword_query = keyword_query.ilike('content', f'%{query}%')
             
             # Apply source filter if provided
             if source and source.strip():
@@ -813,9 +838,11 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
             
         else:
             # Standard vector search only
+            # Use semantic query from search plan if available
+            vector_query = search_plan.semantic_query if search_plan else query
             results = search_documents(
                 client=supabase_client,
-                query=query,
+                query=vector_query,
                 match_count=match_count,
                 filter_metadata=filter_metadata
             )
@@ -839,7 +866,7 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
                 formatted_result["rerank_score"] = result["rerank_score"]
             formatted_results.append(formatted_result)
         
-        return json.dumps({
+        response = {
             "success": True,
             "query": query,
             "source_filter": source,
@@ -847,7 +874,20 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
             "reranking_applied": use_reranking and ctx.request_context.lifespan_context.reranking_model is not None,
             "results": formatted_results,
             "count": len(formatted_results)
-        }, indent=2)
+        }
+        
+        # Include query preprocessing info if it was used
+        if use_llm_query_planning and search_plan:
+            response["query_preprocessing"] = {
+                "enabled": True,
+                "semantic_query": search_plan.semantic_query,
+                "keywords": search_plan.keywords,
+                "search_terms": search_plan.search_terms
+            }
+        else:
+            response["query_preprocessing"] = {"enabled": False}
+            
+        return json.dumps(response, indent=2)
     except Exception as e:
         return json.dumps({
             "success": False,
