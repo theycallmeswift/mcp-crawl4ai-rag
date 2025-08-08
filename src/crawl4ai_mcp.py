@@ -882,8 +882,7 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
                 "enabled": True,
                 "semantic_query": search_plan.semantic_query,
                 "keywords": search_plan.keywords,
-                "search_terms": search_plan.search_terms,
-                "search_breadth": search_plan.search_breadth
+                "search_terms": search_plan.search_terms
             }
         else:
             response["query_preprocessing"] = {"enabled": False}
