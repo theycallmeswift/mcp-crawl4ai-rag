@@ -1,6 +1,7 @@
 """Unit tests for query preprocessing functionality."""
 
 import json
+import pytest
 from unittest.mock import Mock, patch
 from src.utils.query_preprocessing import (
     SearchPlan,
@@ -60,8 +61,8 @@ class TestSearchPlan:
 class TestPlanSearchStrategy:
     """Tests for plan_search_strategy function."""
 
-    @patch("openai.chat.completions.create")
-    def test_plan_search_strategy_success(self, mock_create):
+    @patch("src.utils.query_preprocessing.generate_chat_completion")
+    def test_plan_search_strategy_success(self, mock_generate):
         """When valid query provided, then LLM generates optimized search plan."""
         # Setup
         mock_response = Mock()
@@ -80,7 +81,7 @@ class TestPlanSearchStrategy:
                 "semantic_query": "What is Agent Inbox and how does it work?",
             }
         )
-        mock_create.return_value = mock_response
+        mock_generate.return_value = mock_response
 
         # Exercise
         with patch.dict(
@@ -102,43 +103,42 @@ class TestPlanSearchStrategy:
         assert result.semantic_query == "What is Agent Inbox and how does it work?"
 
         # Verify API call
-        mock_create.assert_called_once()
+        mock_generate.assert_called_once()
 
-    @patch("src.utils.openai_client.generate_chat_completion")
-    def test_plan_search_strategy_with_retry(self, mock_generate):
-        """When LLM fails initially, then returns fallback."""
+    @patch("src.utils.query_preprocessing.generate_chat_completion")
+    def test_plan_search_strategy_with_exception(self, mock_generate):
+        """When LLM fails, then raises RuntimeError."""
         # Setup
         mock_generate.side_effect = Exception("API error")
 
-        # Exercise
+        # Exercise & Verify
         with patch.dict(
             "os.environ",
             {"USE_LLM_QUERY_PLANNING": "true", "OPENAI_API_KEY": "test-key"},
         ):
-            result = plan_search_strategy("test query")
+            with pytest.raises(RuntimeError) as exc_info:
+                plan_search_strategy("test query")
+            
+            assert "Failed to plan search strategy: API error" in str(exc_info.value)
 
-        # Verify fallback behavior on failure
-        assert result.search_terms == ["test query"]
-        assert result.keywords == ["test", "query"]
-        assert result.semantic_query == "test query"
-
-    @patch("src.utils.openai_client.generate_chat_completion")
-    def test_plan_search_strategy_fallback_after_failures(self, mock_generate):
-        """When LLM fails all retries, then returns simple fallback strategy."""
+    @patch("src.utils.query_preprocessing.generate_chat_completion")
+    def test_plan_search_strategy_json_decode_error(self, mock_generate):
+        """When LLM returns invalid JSON, then raises ValueError."""
         # Setup
-        mock_generate.side_effect = Exception("API error")
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Invalid JSON"
+        mock_generate.return_value = mock_response
 
-        # Exercise
+        # Exercise & Verify
         with patch.dict(
             "os.environ",
             {"USE_LLM_QUERY_PLANNING": "true", "OPENAI_API_KEY": "test-key"},
         ):
-            result = plan_search_strategy("test query with spaces")
-
-        # Verify fallback behavior
-        assert result.search_terms == ["test query with spaces"]
-        assert result.keywords == ["test", "query", "with", "spaces"]
-        assert result.semantic_query == "test query with spaces"
+            with pytest.raises(ValueError) as exc_info:
+                plan_search_strategy("test query with spaces")
+            
+            assert "Failed to parse LLM response as JSON" in str(exc_info.value)
 
     def test_plan_search_strategy_disabled(self):
         """When LLM query planning disabled, then returns simple fallback."""

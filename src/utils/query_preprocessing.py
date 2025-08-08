@@ -96,12 +96,12 @@ Query: "Agent Inbox documentation overview"
         result = json.loads(response.choices[0].message.content)
         return SearchPlan.from_dict(result)
 
-    except (Exception, json.JSONDecodeError) as e:
-        # Log the error and return fallback
-        print(f"Failed to plan search strategy: {e}")
-        return SearchPlan(
-            search_terms=[query], keywords=query.split(), semantic_query=query
-        )
+    except json.JSONDecodeError as e:
+        # Re-raise JSON decode errors with context
+        raise ValueError(f"Failed to parse LLM response as JSON: {e}") from e
+    except Exception as e:
+        # Re-raise other exceptions with context
+        raise RuntimeError(f"Failed to plan search strategy: {e}") from e
 
 
 def build_keyword_conditions(keywords: List[str], operator: str = "or") -> str:

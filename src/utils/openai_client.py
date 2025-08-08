@@ -9,7 +9,7 @@ import os
 import time
 from typing import Any, Dict, Optional, Callable, TypeVar
 from functools import wraps
-import openai
+from openai import OpenAI
 
 T = TypeVar("T")
 
@@ -19,7 +19,7 @@ def get_openai_client():
     Get configured OpenAI client with proper error handling.
 
     Returns:
-        openai: Configured OpenAI client
+        OpenAI: Configured OpenAI client instance
 
     Raises:
         ValueError: If OPENAI_API_KEY is not set
@@ -28,8 +28,8 @@ def get_openai_client():
     if not api_key:
         raise ValueError("OPENAI_API_KEY environment variable is not set")
 
-    openai.api_key = api_key
-    return openai
+    # Use modern OpenAI v1.0+ client instantiation
+    return OpenAI(api_key=api_key)
 
 
 def get_model_name() -> str:
